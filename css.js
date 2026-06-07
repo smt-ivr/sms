@@ -252,4 +252,5 @@ body {
     .mobile-only { display: flex;}
     .chat-title-info { margin-right: 0; }
     .mfa-badge { display: none !important; }
-}`;
+}
+`;
