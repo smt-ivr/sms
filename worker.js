@@ -8,14 +8,17 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // ניתוב דף הבית - עכשיו מקבל גם את /sms וגם את /sms/
-    if (path === '/' || path === '/index.html' || path === '/sms' || path === '/sms/') {
+    // תיקון הניתוב: הוספת סלאש אוטומטית אם חסר
+    if (path === '/sms') {
+      return Response.redirect(url.origin + '/sms/', 301);
+    }
+
+    if (path === '/' || path === '/index.html' || path === '/sms/') {
       return new Response(htmlContent, {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
     }
 
-    // שימוש ב-endsWith כדי שזה יעבוד גם אם הנתיב הוא /style.css וגם אם הוא /sms/style.css
     if (path.endsWith('style.css')) {
       return new Response(cssContent, {
         headers: { 'Content-Type': 'text/css; charset=utf-8' },
@@ -34,7 +37,6 @@ export default {
       });
     }
 
-    // במקרה של שגיאה, הוספתי את הנתיב שמחפשים כדי שיהיה לך קל לדבג אם חסר משהו
     return new Response('404 Not Found (Path: ' + path + ')', { status: 404 });
   },
 };
