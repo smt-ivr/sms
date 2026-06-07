@@ -8,6 +8,7 @@ export default `<!DOCTYPE html>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
     <div id="loader" class="loader-overlay hidden">
         <div class="spinner"></div>
         <div class="loader-text" id="loader-text-main">מתחבר למערכת...</div>
