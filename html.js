@@ -5,7 +5,7 @@ export default `<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>מערכת הודעות - ימות המשיח</title>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/sms/style.css">
 </head>
 <body>
 
@@ -129,7 +129,7 @@ export default `<!DOCTYPE html>
         </div>
     </div>
 
-    <script src="mfa.js"></script>
-    <script src="app.js"></script>
+    <script src="/sms/mfa.js"></script>
+    <script src="/sms/app.js"></script>
 </body>
 </html>`;
