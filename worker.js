@@ -1,7 +1,7 @@
 import htmlContent from './html.js';
 import cssContent from './css.js';
-import mfaJsContent from './mfaJs.js';
-import appJsContent from './appJs.js';
+import mfaJsContent from './mfa.js';
+import appJsContent from './app.js';
 
 export default {
   async fetch(request, env, ctx) {
