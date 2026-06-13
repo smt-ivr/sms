@@ -544,7 +544,7 @@ document.getElementById("login-personal-code-btn").addEventListener("click", asy
     loader.classList.remove("hidden");
 
     try {
-        const res = await fetch('/api/auth/systems', {
+        const res = await fetch('/sms/api/auth/systems', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code })
@@ -600,7 +600,7 @@ async function fetchTokenAndLogin(code, systemId) {
     loader.classList.remove("hidden");
 
     try {
-        const res = await fetch('/api/auth/token', {
+        const res = await fetch('/sms/api/auth/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code, systemId })
