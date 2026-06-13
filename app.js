@@ -39,12 +39,35 @@ window.addEventListener("DOMContentLoaded", () => {
         chatArea.classList.add("hidden-mobile");
     }
 
+    checkUrlParams();
+
     if (token) {
         verifyAndLoad();
     } else {
         document.getElementById("personal-code-input").focus();
     }
 });
+
+function checkUrlParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    const urlUser = urlParams.get('username');
+    const urlPass = urlParams.get('password');
+
+    if (urlToken) {
+        token = urlToken;
+        localStorage.setItem("ym_token", token);
+        cleanUrl();
+    } else if (urlUser && urlPass) {
+        loginWithCredentials(urlUser, urlPass);
+        cleanUrl();
+    }
+}
+
+function cleanUrl() {
+    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+    window.history.replaceState({path: newUrl}, '', newUrl);
+}
 
 function verifyAndLoad() {
     loader.classList.remove("hidden");
@@ -53,7 +76,10 @@ function verifyAndLoad() {
     startMfaFlow(token, (reason) => {
         loader.classList.add("hidden");
         showApp();
-        if(mfaStatusBadge) mfaStatusBadge.classList.remove("hidden");
+        if(mfaStatusBadge) {
+            mfaStatusBadge.classList.remove("hidden");
+            mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">verified_user</span><span>טוקן מאומת</span>\`;
+        }
         
         loadAllMessages();
         // הפעלת רענון אוטומטי שקט כל 10 שניות
@@ -88,7 +114,7 @@ function logoutProcess() {
     conversations = {};
     activeContact = null;
 
-    // ניקוי טוטאלי של ה-DOM (כדי שמי שפותח את המחשב לא יראה שאריות)
+    // ניקוי טוטאלי של ה-DOM
     contactsListEl.innerHTML = "";
     chatMessagesEl.innerHTML = '<div class="empty-state"><span class="material-symbols-rounded empty-state-icon">forum</span><h3>התנתקת מהמערכת</h3></div>';
     
@@ -98,6 +124,8 @@ function logoutProcess() {
     chatInputArea.classList.add("hidden");
     if(mfaStatusBadge) mfaStatusBadge.classList.add("hidden");
     
+    document.getElementById("username").value = "";
+    document.getElementById("password").value = "";
     document.getElementById("token-input").value = "";
     document.getElementById("personal-code-input").value = "";
     errorEl.textContent = "";
@@ -207,7 +235,9 @@ async function loadAllMessages(isSilent = false) {
     } catch (e) {
         if (!isSilent) {
             console.error(e);
-            if (e.message.includes("Token invalid")) logoutProcess();
+            if (e.message && (e.message.includes("Token invalid") || e.message.includes("Token expired"))) {
+                 logoutProcess();
+            }
         }
     } finally {
         if (!isSilent) loader.classList.add("hidden");
@@ -360,19 +390,64 @@ async function sendSmsMessage() {
 // ==========================================
 // התחברות לחשבון
 // ==========================================
-document.getElementById("personal-code-input").addEventListener("keypress", (e) => {
-    if (e.key === "Enter") document.getElementById("login-personal-code-btn").click();
+
+// מאזינים לשדות טכניים ולטוקן ישיר
+document.getElementById("username").addEventListener("keypress", (e) => {
+    if (e.key === "Enter") document.getElementById("password").focus();
 });
-document.getElementById("cancel-system-selector").addEventListener("click", () => {
-    document.getElementById("system-selector-modal").classList.add("hidden");
+document.getElementById("password").addEventListener("keypress", (e) => {
+    if (e.key === "Enter") document.getElementById("login-user-btn").click();
 });
 document.getElementById("token-input").addEventListener("keypress", (e) => {
     if (e.key === "Enter") document.getElementById("login-token-btn").click();
 });
 
+// כניסה באמצעות שם משתמש וסיסמה (המערכת המקורית)
+document.getElementById("login-user-btn").addEventListener("click", () => {
+    const user = document.getElementById("username").value.trim();
+    const pass = document.getElementById("password").value.trim();
+    if (!user || !pass) {
+        errorEl.textContent = "נא להזין מספר מערכת וסיסמה.";
+        return;
+    }
+    loginWithCredentials(user, pass);
+});
+
+async function loginWithCredentials(user, pass) {
+    errorEl.textContent = "";
+    loaderTextMain.textContent = "מתחבר למערכת...";
+    loader.classList.remove("hidden");
+    try {
+        const res = await fetch(\`\${API_BASE}/Login?username=\${user}&password=\${pass}\`);
+        const data = await res.json();
+        
+        if (data.responseStatus === "OK" && data.token) {
+            token = data.token;
+            localStorage.setItem("ym_token", token);
+            verifyAndLoad();
+        } else {
+            errorEl.textContent = "שגיאה: פרטים שגויים או שהמערכת חסומה.";
+            loader.classList.add("hidden");
+        }
+    } catch (e) {
+        errorEl.textContent = "שגיאת רשת מול ימות המשיח.";
+        loader.classList.add("hidden");
+    }
+}
+
+// כניסה עם טוקן ישיר
 document.getElementById("login-token-btn").addEventListener("click", () => {
     const t = document.getElementById("token-input").value.trim();
     if (t) { token = t; localStorage.setItem("ym_token", token); verifyAndLoad(); }
+});
+
+// כניסה עם קוד אישי (המערכת החדשה)
+document.getElementById("personal-code-input").addEventListener("keypress", (e) => {
+    if (e.key === "Enter") document.getElementById("login-personal-code-btn").click();
+});
+
+document.getElementById("cancel-system-selector").addEventListener("click", () => {
+    document.getElementById("system-selector-modal").classList.add("hidden");
 });
 
 document.getElementById("login-personal-code-btn").addEventListener("click", async () => {
@@ -397,7 +472,7 @@ document.getElementById("login-personal-code-btn").addEventListener("click", asy
         else showSystemSelector(code, data.systems);
     } catch (e) {
         loader.classList.add("hidden");
-        errorEl.textContent = "שגיאת תקשורת.";
+        errorEl.textContent = "שגיאת תקשורת מול השרת.";
     }
 });
 
