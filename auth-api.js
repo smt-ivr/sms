@@ -14,8 +14,8 @@ export default async function handleAuthApi(request, env) {
             return new Response(JSON.stringify({ error: 'קוד חסר' }), { status: 400 });
         }
 
-        // שלב 1: מציאת הקוד בטבלה
-        const userCode = await env.DB.prepare('SELECT id, owner_name FROM access_codes WHERE code = ?')
+        // שליפת הקוד כולל בדיקת חסימה
+        const userCode = await env.DB.prepare('SELECT id, owner_name, is_blocked FROM access_codes WHERE code = ?')
             .bind(code)
             .first();
 
@@ -23,7 +23,10 @@ export default async function handleAuthApi(request, env) {
             return new Response(JSON.stringify({ error: 'קוד שגוי או לא קיים' }), { status: 401 });
         }
 
-        // נתיב א': שליפת רשימת המערכות (ללא טוקנים!)
+        if (userCode.is_blocked === 1) {
+            return new Response(JSON.stringify({ error: 'המשתמש חסום. פנה להנהלה.' }), { status: 403 });
+        }
+
         if (path.endsWith('/api/auth/systems')) {
             const { results } = await env.DB.prepare('SELECT id, description FROM system_tokens WHERE code_id = ?')
                 .bind(userCode.id)
@@ -34,7 +37,6 @@ export default async function handleAuthApi(request, env) {
             });
         }
 
-        // נתיב ב': שליפת הטוקן למערכת ספציפית וכתיבת לוג
         if (path.endsWith('/api/auth/token')) {
             const { systemId } = body;
             
@@ -46,7 +48,6 @@ export default async function handleAuthApi(request, env) {
                 return new Response(JSON.stringify({ error: 'מערכת לא מורשית' }), { status: 403 });
             }
 
-            // כתיבת לוג למעקב
             const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
             await env.DB.prepare('INSERT INTO access_logs (code_id, system_id, ip_address) VALUES (?, ?, ?)')
                 .bind(userCode.id, system.id, ip)
