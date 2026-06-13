@@ -11,24 +11,23 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // ניתוב ל-API הניהול (תופס גם /sms/api/admin)
-    if (path.includes('/api/admin')) {
+    // ניתוב ל-API הניהול ופורטל המשתמשים
+    if (path.includes('/api/admin') || path.includes('/api/user')) {
       return handleAdminApi(request, env);
     }
 
-    // ניתוב ל-API האבטחה וההתחברות (תופס גם /sms/api/auth)
+    // ניתוב ל-API האבטחה וההתחברות לאפליקציה הראשית
     if (path.includes('/api/auth')) {
       return handleAuthApi(request, env);
     }
 
-    // עמוד ניהול הטוקנים (תופס את /sms/manage-tokens)
+    // עמוד פורטל הניהול והמשתמשים
     if (path.includes('/manage-tokens')) {
       return new Response(adminHtmlContent, {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
     }
 
-    // טיפול בנתיב הראשי של הפרויקט
     if (path === '/sms') {
       return Response.redirect(url.origin + '/sms/', 301);
     }
