@@ -1,3 +1,7 @@
 name = "sms"
 main = "worker.js" 
 compatibility_date = "2024-01-01"
+[[d1_databases]]
+binding = "DB"
+database_name = "sms-db"
+database_id = "d224ec0e-9fbd-4a32-8884-6c797be3bf0d"
