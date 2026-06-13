@@ -123,6 +123,10 @@ input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px
 .msg-in .msg-footer { color: rgba(0,0,0,0.5); }
 .status-icon { font-size: 14px !important; }
 
+/* עיצוב קישורים בתוך הודעות */
+.chat-link { color: inherit; text-decoration: underline; text-underline-offset: 3px; font-weight: 500; word-break: break-all; }
+.chat-link:hover { opacity: 0.8; }
+
 /* שורת כתיבת הודעה */
 #chat-input-area { padding: 12px 20px; background: #fff; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0; min-height: 65px; }
 #new-message-input { flex: 1; border: 1px solid var(--border); border-radius: 20px; padding: 10px 15px; font-size: 15px; resize: none; max-height: 120px; background: var(--bg-main); outline: none; transition: 0.2s; overflow-y: auto;}
@@ -138,8 +142,8 @@ input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px
 /* כפתורים וכלים */
 .icon-btn { background: transparent; border: none; color: var(--primary); cursor: pointer; padding: 8px; border-radius: 50%; display: flex; align-items: center; transition: 0.2s; }
 .icon-btn:hover { background: rgba(0,122,255,0.1); }
-.mfa-badge { display: flex; align-items: center; gap: 4px; background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
-.mfa-badge .badge-icon { font-size: 14px !important; }
+.mfa-badge { display: flex; align-items: center; gap: 6px; background: #e0f2fe; color: #0284c7; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+.mfa-badge .badge-icon { font-size: 16px !important; }
 
 /* --- Mobile Responsiveness --- */
 .mobile-only { display: none; }
