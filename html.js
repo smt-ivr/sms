@@ -98,6 +98,7 @@ export default `<!DOCTYPE html>
                 <h2>הודעות</h2>
                 <div class="sidebar-actions">
                     <div id="mfa-status-badge" class="mfa-badge hidden"><span class="material-symbols-rounded badge-icon">verified_user</span></div>
+                    <button id="refresh-btn" class="icon-btn" title="רענן נתונים"><span class="material-symbols-rounded">refresh</span></button>
                     <button id="new-chat-btn" class="icon-btn" title="שיחה חדשה"><span class="material-symbols-rounded">edit_square</span></button>
                     <button id="logout-btn" class="icon-btn" title="התנתק" style="color:var(--danger);"><span class="material-symbols-rounded">logout</span></button>
                 </div>
