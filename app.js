@@ -230,6 +230,7 @@ function logoutProcess() {
     document.getElementById("username").value = "";
     document.getElementById("password").value = "";
     document.getElementById("token-input").value = "";
+    document.getElementById("personal-code-input").value = "";
     errorEl.textContent = "";
     document.getElementById("username").focus();
 }
@@ -514,4 +515,111 @@ function renderChat(contact) {
     
     chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     newMessageInput.focus();
+}
+
+/* =========================================
+   מנגנון ההתחברות החדש מבוסס הקוד האישי 
+========================================= */
+
+document.getElementById("personal-code-input").addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("login-personal-code-btn").click();
+    }
+});
+
+document.getElementById("cancel-system-selector").addEventListener("click", () => {
+    document.getElementById("system-selector-modal").classList.add("hidden");
+});
+
+document.getElementById("login-personal-code-btn").addEventListener("click", async () => {
+    const code = document.getElementById("personal-code-input").value.trim();
+    if (!code) {
+        errorEl.textContent = "נא להזין קוד אישי.";
+        return;
+    }
+
+    errorEl.textContent = "בודק הרשאות...";
+    loaderTextMain.textContent = "מזהה משתמש...";
+    loader.classList.remove("hidden");
+
+    try {
+        const res = await fetch('/api/auth/systems', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+        });
+        
+        const data = await res.json();
+        loader.classList.add("hidden");
+
+        if (!res.ok) {
+            errorEl.textContent = data.error || "שגיאה בבדיקת הקוד";
+            return;
+        }
+
+        if (!data.systems || data.systems.length === 0) {
+            errorEl.textContent = "לא נמצאו מערכות משויכות לקוד זה.";
+            return;
+        }
+
+        // אם יש רק מערכת אחת, מתחברים אוטומטית אליה
+        if (data.systems.length === 1) {
+            fetchTokenAndLogin(code, data.systems[0].id);
+        } else {
+            // אם יש כמה, מציגים מודאל לבחירה
+            showSystemSelector(code, data.systems);
+        }
+    } catch (e) {
+        loader.classList.add("hidden");
+        errorEl.textContent = "שגיאת תקשורת מול השרת.";
+        console.error(e);
+    }
+});
+
+function showSystemSelector(code, systems) {
+    const container = document.getElementById("system-buttons-container");
+    container.innerHTML = ""; // ניקוי
+    
+    systems.forEach(sys => {
+        const btn = document.createElement("button");
+        btn.className = "btn-primary";
+        btn.innerHTML = \`<span class="material-symbols-rounded">dns</span> \${sys.description}\`;
+        btn.onclick = () => {
+            document.getElementById("system-selector-modal").classList.add("hidden");
+            fetchTokenAndLogin(code, sys.id);
+        };
+        container.appendChild(btn);
+    });
+
+    document.getElementById("system-selector-modal").classList.remove("hidden");
+}
+
+async function fetchTokenAndLogin(code, systemId) {
+    loaderTextMain.textContent = "מושך מפתח מערכת...";
+    loader.classList.remove("hidden");
+
+    try {
+        const res = await fetch('/api/auth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, systemId })
+        });
+        
+        const data = await res.json();
+
+        if (!res.ok) {
+            loader.classList.add("hidden");
+            errorEl.textContent = data.error || "שגיאה במשיכת הטוקן";
+            return;
+        }
+
+        // ברגע שקיבלנו את הטוקן, שולחים אותו לפונקציית ההתחברות הקיימת
+        handleSuccessfulLogin(data.token);
+
+    } catch (e) {
+        loader.classList.add("hidden");
+        errorEl.textContent = "שגיאת תקשורת במשיכת הטוקן.";
+        console.error(e);
+    }
 }`;
