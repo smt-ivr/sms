@@ -50,38 +50,41 @@ export default `<!DOCTYPE html>
     </div>
 
     <div id="login-screen" class="screen">
-        <div class="login-box" style="position: relative;">
+        <div class="login-box">
             
-            <a href="/sms/manage-tokens" style="position: absolute; top: 20px; left: 20px; text-decoration: none; color: var(--text-muted); display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 500; transition: 0.2s;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-muted)'">
+            <a href="/sms/manage-tokens" class="admin-link">
                 <span class="material-symbols-rounded" style="font-size: 18px;">admin_panel_settings</span> לניהול
             </a>
 
-            <div class="login-header" style="margin-top: 10px;">
-                <span class="material-symbols-rounded" style="font-size:48px; color:var(--primary);">chat</span>
-                <h2>הודעות SMS</h2>
-                <p>התחברות מהירה למערכת שלך</p>
+            <div class="login-header">
+                <span class="material-symbols-rounded" style="font-size:42px; color:var(--primary);">chat</span>
+                <h2>התחברות למערכת</h2>
+                <p>בחר את שיטת ההתחברות הנוחה לך</p>
             </div>
             
-            <div class="input-group">
-                <input type="password" id="personal-code-input" placeholder="הכנס קוד אישי..." autofocus />
-                <button id="login-personal-code-btn" class="btn-primary">
-                    <span class="material-symbols-rounded">login</span> כניסה מאובטחת
-                </button>
+            <div class="login-section">
+                <h4><span class="material-symbols-rounded" style="font-size:18px;">dialpad</span> כניסה בקוד אישי</h4>
+                <div class="input-group">
+                    <input type="password" id="personal-code-input" placeholder="הכנס את הקוד שלך..." />
+                    <button id="login-personal-code-btn" class="btn-primary">התחברות מהירה</button>
+                </div>
             </div>
 
-            <div class="divider"><span>או התחברות טכנית</span></div>
-
-            <div class="input-group" style="margin-bottom: 10px;">
-                <input type="text" id="username" placeholder="מספר מערכת (לדוגמה: 077...)" />
-                <input type="password" id="password" placeholder="סיסמה" />
-                <button id="login-user-btn" class="btn-secondary" style="background-color: var(--text-main); color: white;">
-                    <span class="material-symbols-rounded">account_circle</span> התחבר עם פרטים
-                </button>
+            <div class="login-section">
+                <h4><span class="material-symbols-rounded" style="font-size:18px;">account_circle</span> מערכת וסיסמה</h4>
+                <div class="input-group">
+                    <input type="text" id="username" placeholder="מספר מערכת (לדוגמה: 077...)" />
+                    <input type="password" id="password" placeholder="סיסמה" />
+                    <button id="login-user-btn" class="btn-secondary" style="background:var(--text-main); color:white;">התחבר עם פרטים</button>
+                </div>
             </div>
 
-            <div class="input-group">
-                <input type="text" id="token-input" placeholder="הדבק Token ישירות כאן" />
-                <button id="login-token-btn" class="btn-secondary">הכנס עם טוקן</button>
+            <div class="login-section" style="margin-bottom: 0;">
+                <h4><span class="material-symbols-rounded" style="font-size:18px;">key</span> כניסה עם Token</h4>
+                <div class="input-group">
+                    <input type="text" id="token-input" placeholder="הדבק Token ישירות כאן..." />
+                    <button id="login-token-btn" class="btn-secondary">היכנס באמצעות טוקן</button>
+                </div>
             </div>
 
             <div id="login-error" class="error-msg"></div>
