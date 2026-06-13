@@ -14,6 +14,16 @@ export default `<!DOCTYPE html>
         <div class="loader-text" id="loader-text-main">מתחבר למערכת...</div>
     </div>
 
+    <div id="system-selector-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <h3>בחר מערכת להתחברות</h3>
+            <p>נמצאו מספר מערכות המשויכות לקוד זה</p>
+            <div id="system-buttons-container" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                </div>
+            <button id="cancel-system-selector" class="btn-secondary">ביטול</button>
+        </div>
+    </div>
+
     <div id="mfa-modal" class="modal-overlay hidden">
         <div class="modal-box mfa-box">
             <button id="mfa-close-btn" class="mfa-close-btn" title="סגור">&times;</button>
@@ -58,7 +68,18 @@ export default `<!DOCTYPE html>
             </div>
 
             <div class="divider">
-                <span>או</span>
+                <span>או השתמש בקוד</span>
+            </div>
+
+            <div class="input-group">
+                <input type="password" id="personal-code-input" placeholder="הכנס קוד התחברות אישי..." />
+                <button id="login-personal-code-btn" class="btn-primary" style="background-color: #2c3e50;">
+                    <span class="material-symbols-rounded">dialpad</span> התחבר עם קוד אישי
+                </button>
+            </div>
+
+            <div class="divider">
+                <span>או Token ישיר</span>
             </div>
 
             <div class="input-group">
