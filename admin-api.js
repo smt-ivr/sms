@@ -2,10 +2,24 @@ export default async function handleAdminApi(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
     
-    // אבטחת פאנל הניהול ע"י סיסמה (מומלץ לשנות)
+    // 1. שליפת סיסמת המנהל ממסד הנתונים בלבד! (ללא שום גיבוי קשיח)
+    let storedAdminPass = null; 
+    try {
+        const record = await env.DB.prepare("SELECT value FROM settings WHERE key = 'admin_password'").first();
+        if (record && record.value) {
+            storedAdminPass = record.value;
+        }
+    } catch (e) {
+        console.error("Settings table error:", e);
+        // אם יש שגיאה בשליפה ממסד הנתונים - חוסמים את הגישה מיד
+        return new Response(JSON.stringify({ error: 'Database error' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // 2. אבטחת פאנל הניהול
     const adminPass = request.headers.get('x-admin-password');
-    if (adminPass !== 'admin1234') { 
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    // אם לא הוזנה סיסמה בבקשה, או שלא קיימת סיסמה במסד הנתונים, או שהן לא תואמות - חוסמים!
+    if (!storedAdminPass || adminPass !== storedAdminPass) { 
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
     }
 
     try {
@@ -33,6 +47,16 @@ export default async function handleAdminApi(request, env) {
 
         if (request.method === 'POST') {
             const body = await request.json();
+            
+            // נקודת קצה חדשה: שינוי סיסמת מנהל
+            if (path.endsWith('/api/admin/settings/password')) {
+                const { newPassword } = body;
+                if (!newPassword) return new Response(JSON.stringify({ error: 'Missing password' }), { status: 400 });
+                
+                await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'admin_password'").bind(newPassword).run();
+                return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+            }
+
             if (path.endsWith('/api/admin/codes')) {
                 const { code, owner_name } = body;
                 await env.DB.prepare('INSERT INTO access_codes (code, owner_name) VALUES (?, ?)').bind(code, owner_name).run();
