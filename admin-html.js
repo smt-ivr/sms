@@ -103,7 +103,7 @@ export default `<!DOCTYPE html>
         }
 
         async function loadCodes() {
-            const res = await fetch('/api/admin/codes', { headers });
+            const res = await fetch('/sms/api/admin/codes', { headers });
             if(res.status === 401) { alert("סיסמה שגויה!"); return; }
             const data = await res.json();
             const tbody = document.getElementById('codes-table-body');
@@ -123,7 +123,7 @@ export default `<!DOCTYPE html>
             const code = document.getElementById('new-code').value;
             const owner_name = document.getElementById('new-owner').value;
             if(!code || !owner_name) return alert("השלם את כל השדות");
-            await fetch('/api/admin/codes', { method: 'POST', headers, body: JSON.stringify({ code, owner_name }) });
+            await fetch('/sms/api/admin/codes', { method: 'POST', headers, body: JSON.stringify({ code, owner_name }) });
             document.getElementById('new-code').value = '';
             document.getElementById('new-owner').value = '';
             loadCodes();
@@ -131,7 +131,7 @@ export default `<!DOCTYPE html>
 
         async function deleteCode(id) {
             if(!confirm("האם אתה בטוח? פעולה זו תמחק גם את כל המערכות המשויכות!")) return;
-            await fetch(\`/api/admin/codes/\${id}\`, { method: 'DELETE', headers });
+            await fetch(\`/sms/api/admin/codes/\${id}\`, { method: 'DELETE', headers });
             loadCodes();
         }
 
@@ -143,7 +143,7 @@ export default `<!DOCTYPE html>
         }
 
         async function loadSystems() {
-            const res = await fetch(\`/api/admin/systems/\${activeCodeId}\`, { headers });
+            const res = await fetch(\`/sms/api/admin/systems/\${activeCodeId}\`, { headers });
             const data = await res.json();
             const tbody = document.getElementById('systems-table-body');
             tbody.innerHTML = '';
@@ -159,7 +159,7 @@ export default `<!DOCTYPE html>
             const description = document.getElementById('new-sys-desc').value;
             const token = document.getElementById('new-sys-token').value;
             if(!description || !token) return alert("השלם את כל השדות");
-            await fetch('/api/admin/systems', { method: 'POST', headers, body: JSON.stringify({ code_id: activeCodeId, description, token }) });
+            await fetch('/sms/api/admin/systems', { method: 'POST', headers, body: JSON.stringify({ code_id: activeCodeId, description, token }) });
             document.getElementById('new-sys-desc').value = '';
             document.getElementById('new-sys-token').value = '';
             loadSystems();
@@ -167,12 +167,12 @@ export default `<!DOCTYPE html>
 
         async function deleteSystem(id) {
             if(!confirm("האם למחוק מערכת זו?")) return;
-            await fetch(\`/api/admin/systems/\${id}\`, { method: 'DELETE', headers });
+            await fetch(\`/sms/api/admin/systems/\${id}\`, { method: 'DELETE', headers });
             loadSystems();
         }
 
         async function loadLogs() {
-            const res = await fetch('/api/admin/logs', { headers });
+            const res = await fetch('/sms/api/admin/logs', { headers });
             const data = await res.json();
             const tbody = document.getElementById('logs-table-body');
             tbody.innerHTML = '';
