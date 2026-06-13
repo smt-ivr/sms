@@ -50,8 +50,13 @@ export default `<!DOCTYPE html>
     </div>
 
     <div id="login-screen" class="screen">
-        <div class="login-box">
-            <div class="login-header">
+        <div class="login-box" style="position: relative;">
+            
+            <a href="/sms/manage-tokens" style="position: absolute; top: 20px; left: 20px; text-decoration: none; color: var(--text-muted); display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 500; transition: 0.2s;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-muted)'">
+                <span class="material-symbols-rounded" style="font-size: 18px;">admin_panel_settings</span> לניהול
+            </a>
+
+            <div class="login-header" style="margin-top: 10px;">
                 <span class="material-symbols-rounded" style="font-size:48px; color:var(--primary);">chat</span>
                 <h2>הודעות SMS</h2>
                 <p>התחברות מהירה למערכת שלך</p>
@@ -66,10 +71,16 @@ export default `<!DOCTYPE html>
 
             <div class="divider"><span>או התחברות טכנית</span></div>
 
+            <div class="input-group" style="margin-bottom: 10px;">
+                <input type="text" id="username" placeholder="מספר מערכת (לדוגמה: 077...)" />
+                <input type="password" id="password" placeholder="סיסמה" />
+                <button id="login-user-btn" class="btn-secondary" style="background-color: var(--text-main); color: white;">
+                    <span class="material-symbols-rounded">account_circle</span> התחבר עם פרטים
+                </button>
+            </div>
+
             <div class="input-group">
-                <input type="text" id="username" placeholder="מספר מערכת (077...)" class="hidden" />
-                <input type="password" id="password" placeholder="סיסמה" class="hidden" />
-                <input type="text" id="token-input" placeholder="הדבק Token ישיר..." />
+                <input type="text" id="token-input" placeholder="הדבק Token ישירות כאן" />
                 <button id="login-token-btn" class="btn-secondary">הכנס עם טוקן</button>
             </div>
 
