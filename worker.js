@@ -11,24 +11,24 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // ניתוב ל-API הניהול
-    if (path.startsWith('/api/admin')) {
+    // ניתוב ל-API הניהול (תופס גם /sms/api/admin)
+    if (path.includes('/api/admin')) {
       return handleAdminApi(request, env);
     }
 
-    // ניתוב ל-API האבטחה וההתחברות
-    if (path.startsWith('/api/auth')) {
+    // ניתוב ל-API האבטחה וההתחברות (תופס גם /sms/api/auth)
+    if (path.includes('/api/auth')) {
       return handleAuthApi(request, env);
     }
 
-    // עמוד ניהול הטוקנים (פאנל הניהול)
-    if (path.endsWith('/manage-tokens')) {
+    // עמוד ניהול הטוקנים (תופס את /sms/manage-tokens)
+    if (path.includes('/manage-tokens')) {
       return new Response(adminHtmlContent, {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
     }
 
-    // תיקון הניתוב: הוספת סלאש אוטומטית אם חסר
+    // טיפול בנתיב הראשי של הפרויקט
     if (path === '/sms') {
       return Response.redirect(url.origin + '/sms/', 301);
     }
