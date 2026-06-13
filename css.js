@@ -57,15 +57,35 @@ input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px
 .error-msg { color: var(--danger); font-size: 14px; text-align: center; font-weight: 500; min-height: 20px; }
 
 /* --- מבנה אפליקציה ראשית - מתוקן לגלילה מושלמת --- */
-#app-screen { display: flex; width: 100%; height: 100%; max-width: 1400px; margin: 0 auto; background: var(--bg-chat); box-shadow: 0 0 20px rgba(0,0,0,0.05); }
+#app-screen { 
+    display: flex; 
+    align-items: stretch; /* ביטול המרכוז האנכי מההתחברות! זה מה שתוקן */
+    justify-content: flex-start;
+    width: 100%; 
+    height: 100%; 
+    max-width: 1400px; 
+    margin: 0 auto; 
+    background: var(--bg-chat); 
+    box-shadow: 0 0 20px rgba(0,0,0,0.05); 
+}
 
 /* סרגל צד (אנשי קשר) */
-#sidebar { width: 350px; background: #fff; border-left: 1px solid var(--border); display: flex; flex-direction: column; z-index: 10; flex-shrink: 0; }
+#sidebar { 
+    width: 350px; 
+    height: 100%; /* גובה מוחלט */
+    background: #fff; 
+    border-left: 1px solid var(--border); 
+    display: flex; 
+    flex-direction: column; 
+    z-index: 10; 
+    flex-shrink: 0; 
+}
+
 .sidebar-header { padding: 0 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); background: #fdfdfd; height: 70px; flex-shrink: 0; }
 .sidebar-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
 .sidebar-actions { display: flex; gap: 5px; align-items: center; }
 
-/* כאן תוקנה הגלילה! min-height: 0 מוודא שהרשימה לא תדחוף את הכותרת */
+/* אזור הגלילה של השיחות - min-height: 0 חובה כדי שייווצר פס גלילה */
 #contacts-list { flex: 1; overflow-y: auto; min-height: 0; }
 
 .contact-item { padding: 15px 20px; border-bottom: 1px solid var(--border); cursor: pointer; transition: 0.2s; display: flex; flex-direction: column;}
@@ -78,7 +98,15 @@ input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px
 .contact-last-msg { font-size: 14px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; width: 100%; direction: rtl;}
 
 /* אזור צ'אט */
-#chat-area { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); min-width: 0; }
+#chat-area { 
+    flex: 1; 
+    height: 100%; /* גובה מוחלט */
+    display: flex; 
+    flex-direction: column; 
+    background: var(--bg-main); 
+    min-width: 0; 
+}
+
 .chat-header { padding: 0 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); height: 70px; flex-shrink: 0; }
 .chat-title-info { display: flex; flex-direction: column;}
 .chat-title-info h2 { font-size: 18px; font-weight: 700; margin: 0; direction: ltr; text-align: right; }
@@ -87,7 +115,6 @@ input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px
 /* אזור ההודעות עצמו */
 #chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 
-/* הודעות בועה בסגנון נייטיב */
 .message { max-width: 75%; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.4; position: relative; word-wrap: break-word; display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
 .msg-in { background: var(--msg-in); color: var(--msg-in-text); align-self: flex-start; border-bottom-right-radius: 4px; margin-right: auto; }
 .msg-out { background: var(--msg-out); color: var(--msg-out-text); align-self: flex-end; border-bottom-left-radius: 4px; margin-left: auto; }
