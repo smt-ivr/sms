@@ -23,7 +23,7 @@ export default `<!DOCTYPE html>
         .btn-add { background: var(--secondary); }
         .btn-del { background: #e74c3c; padding: 5px 10px; font-size: 12px; }
         .btn-view { background: #3498db; padding: 5px 10px; font-size: 12px; }
-        input[type="text"] { padding: 10px; border: 1px solid var(--border); border-radius: 6px; width: 200px; margin-left: 10px;}
+        input[type="text"], input[type="password"] { padding: 10px; border: 1px solid var(--border); border-radius: 6px; width: 200px; margin-left: 10px;}
         .flex-form { display: flex; gap: 10px; align-items: center; margin-bottom: 20px;}
         .hidden { display: none !important; }
     </style>
@@ -33,6 +33,7 @@ export default `<!DOCTYPE html>
         <div class="brand"><span class="material-symbols-rounded">admin_panel_settings</span> פאנל ניהול</div>
         <div class="menu-item active" onclick="switchTab('codes')"><span class="material-symbols-rounded">group</span> משתמשים וקודים</div>
         <div class="menu-item" onclick="switchTab('logs')"><span class="material-symbols-rounded">history</span> היסטוריית התחברויות</div>
+        <div class="menu-item" onclick="switchTab('settings')"><span class="material-symbols-rounded">settings</span> הגדרות מערכת</div>
     </div>
     <div id="main">
         <div class="header">
@@ -71,10 +72,19 @@ export default `<!DOCTYPE html>
                 <tbody id="logs-table-body"></tbody>
             </table>
         </div>
+
+        <div id="tab-settings" class="card hidden">
+            <h3 style="margin-bottom: 15px; color: var(--primary);">שינוי סיסמת מנהל לפאנל הניהול</h3>
+            <p style="margin-bottom: 20px; color: var(--text);">הזן סיסמה חדשה ושמור. הסיסמה תישמר מאובטחת במסד הנתונים ולא תהיה חשופה בקוד.</p>
+            <div class="flex-form">
+                <input type="password" id="new-admin-password" placeholder="הקש סיסמה חדשה" />
+                <button class="btn btn-add" onclick="changeAdminPassword()"><span class="material-symbols-rounded">save</span> שמור סיסמה חדשה</button>
+            </div>
+        </div>
     </div>
 
     <script>
-        let adminPass = prompt("אנא הכנס סיסמת מנהל (ברירת מחדל: admin1234):");
+        let adminPass = prompt("אנא הכנס סיסמת מנהל:");
         if (!adminPass) document.body.innerHTML = '<h1 style="margin:50px auto;">גישה נדחתה</h1>';
         
         const headers = { 'Content-Type': 'application/json', 'x-admin-password': adminPass };
@@ -99,12 +109,20 @@ export default `<!DOCTYPE html>
                 document.getElementById('page-title').innerText = 'היסטוריית התחברויות';
                 document.querySelectorAll('.menu-item')[1].classList.add('active');
                 loadLogs();
+            } else if (tab === 'settings') {
+                document.getElementById('tab-settings').classList.remove('hidden');
+                document.getElementById('page-title').innerText = 'הגדרות מערכת';
+                document.querySelectorAll('.menu-item')[2].classList.add('active');
             }
         }
 
         async function loadCodes() {
             const res = await fetch('/sms/api/admin/codes', { headers });
-            if(res.status === 401) { alert("סיסמה שגויה!"); return; }
+            if(res.status === 401) { 
+                alert("סיסמה שגויה! רענן את העמוד ונסה שוב."); 
+                document.body.innerHTML = '<h1 style="margin:50px auto;">גישה נדחתה</h1>';
+                return; 
+            }
             const data = await res.json();
             const tbody = document.getElementById('codes-table-body');
             tbody.innerHTML = '';
@@ -187,7 +205,29 @@ export default `<!DOCTYPE html>
             });
         }
 
-        // טעינה ראשונית
+        async function changeAdminPassword() {
+            const newPassword = document.getElementById('new-admin-password').value;
+            if(!newPassword) return alert('נא להזין סיסמה חדשה');
+
+            try {
+                const res = await fetch('/sms/api/admin/settings/password', { 
+                    method: 'POST', 
+                    headers, 
+                    body: JSON.stringify({ newPassword }) 
+                });
+                
+                if(res.ok) {
+                    alert('הסיסמה שונתה בהצלחה! הדף יתרענן, נא להתחבר עם הסיסמה החדשה.');
+                    location.reload();
+                } else {
+                    alert('שגיאה בעת שמירת הסיסמה');
+                }
+            } catch (e) {
+                alert('שגיאת תקשורת מול השרת');
+            }
+        }
+
+        // טעינה ראשונית - המערכת תתחיל מהמשתמשים רק אם הוזנה סיסמה
         if(adminPass) switchTab('codes');
     </script>
 </body>
