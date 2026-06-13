@@ -78,7 +78,12 @@ function verifyAndLoad() {
         showApp();
         if(mfaStatusBadge) {
             mfaStatusBadge.classList.remove("hidden");
-            mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">verified_user</span><span>טוקן מאומת</span>\`;
+            const reasonText = typeof translateMfaReason === 'function' ? translateMfaReason(reason) : reason || "";
+            mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">verified_user</span>
+            <div style="display:flex; flex-direction:column; line-height:1.1;">
+                <span>טוקן מאומת</span>
+                <span style="font-size:9px; opacity:0.8; font-weight:normal; max-width:85px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="\${reasonText}">\${reasonText}</span>
+            </div>\`;
         }
         
         loadAllMessages();
@@ -138,6 +143,10 @@ function logoutProcess() {
 }
 
 document.getElementById("logout-btn").addEventListener("click", logoutProcess);
+
+document.getElementById("refresh-btn").addEventListener("click", () => {
+    loadAllMessages(false); // קריאה לא שקטה, תציג את ה-Loader
+});
 
 // ==========================================
 // ממשק משתמש כללי
@@ -330,7 +339,14 @@ function renderChat(contact, preserveScroll = false) {
     msgs.forEach(msg => {
         const timeStr = new Date(msg.time).toLocaleTimeString('he-IL', {hour: '2-digit', minute:'2-digit'});
         const statusIcon = msg.isOut ? getStatusIconHtml(msg.status) : "";
-        let safeText = msg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\\n/g, "<br>");
+        
+        // הגנה מפני HTML Injection והפיכת קישורים ללחיצים
+        let safeText = msg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const urlRegex = /(https?:\\/\\/[^\\s]+)/g;
+        safeText = safeText.replace(urlRegex, function(url) {
+            return \`<a href="\${url}" target="_blank" rel="noopener noreferrer" class="chat-link">\${url}</a>\`;
+        });
+        safeText = safeText.replace(/\\n/g, "<br>");
         
         newHTML += \`<div class="message \${msg.isOut ? 'msg-out' : 'msg-in'}">
             <div>\${safeText}</div>
