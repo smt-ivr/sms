@@ -5,6 +5,8 @@ import appJsContent from './app.js';
 import handleAuthApi from './auth-api.js';
 import handleAdminApi from './admin-api.js';
 import adminHtmlContent from './admin-html.js';
+import adminCssContent from './admin-css.js';
+import adminAppJsContent from './admin-app.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -16,7 +18,7 @@ export default {
       return handleAdminApi(request, env);
     }
 
-    // ניתוב ל-API האבטחה וההתחברות לאפליקציה הראשית
+    // ניתוב ל-API האבטחה
     if (path.includes('/api/auth')) {
       return handleAuthApi(request, env);
     }
@@ -28,6 +30,19 @@ export default {
       });
     }
 
+    // ספריות עיצוב ולוגיקה של פורטל הניהול
+    if (path.endsWith('admin-style.css')) {
+      return new Response(adminCssContent, {
+        headers: { 'Content-Type': 'text/css; charset=utf-8' },
+      });
+    }
+    if (path.endsWith('admin-app.js')) {
+      return new Response(adminAppJsContent, {
+        headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
+      });
+    }
+
+    // ניתובים לאפליקציה הראשית
     if (path === '/sms') {
       return Response.redirect(url.origin + '/sms/', 301);
     }
