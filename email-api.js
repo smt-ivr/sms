@@ -4,7 +4,7 @@ export async function sendVerificationEmail(toEmail, code) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       personalizations: [{ to: [{ email: toEmail, name: "לקוח יקר" }] }],
-      from: { email: 'sms@smti.uk', name: 'S.M.T הקמת מערכות טלפוניות' },
+      from: { email: 'sms@smti.uk', name: 'S.M.T' },
       subject: 'קוד האימות שלך להרשמה',
       content: [
         {
@@ -24,9 +24,15 @@ export async function sendVerificationEmail(toEmail, code) {
 
   try {
     const response = await fetch(sendRequest);
-    return response.ok;
+    if (!response.ok) {
+      // תופס את השגיאה האמיתית של MailChannels
+      const errorText = await response.text(); 
+      console.error('MailChannels Error:', response.status, errorText);
+      return { success: false, message: `[MailChannels Error ${response.status}] ${errorText}` };
+    }
+    return { success: true };
   } catch (error) {
-    console.error('MailChannels Error:', error);
-    return false;
+    console.error('Fetch Error:', error);
+    return { success: false, message: `[Network Error] ${error.message}` };
   }
 }
