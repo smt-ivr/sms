@@ -1,30 +1,20 @@
 export async function sendVerificationEmail(toEmail, code) {
   const sendRequest = new Request('https://api.mailchannels.net/tx/v1/send', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      personalizations: [
-        {
-          to: [{ email: toEmail, name: toEmail.split('@')[0] }],
-        },
-      ],
-      from: {
-        email: 'sms@smti.uk',
-        name: 'S.M.T הקמת מערכות טלפוניות', 
-      },
+      personalizations: [{ to: [{ email: toEmail, name: "לקוח יקר" }] }],
+      from: { email: 'sms@smti.uk', name: 'S.M.T הקמת מערכות טלפוניות' },
       subject: 'קוד האימות שלך להרשמה',
       content: [
         {
           type: 'text/html',
           value: `
-            <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right;">
-              <h2 style="color: #333;">שלום רב!</h2>
-              <p>קיבלנו בקשה לפתיחת חשבון חדש.</p>
-              <p>קוד האימות שלך הוא:</p>
-              <h1 style="color: #007bff; letter-spacing: 4px; background: #f4f4f4; padding: 10px; display: inline-block; border-radius: 5px;">${code}</h1>
-              <p style="color: #777; font-size: 12px;">* הקוד בתוקף לזמן מוגבל. אם לא ביקשת להירשם, אנא התעלם מהודעה זו.</p>
+            <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right; background-color: #f9f9f9; padding: 20px; border-radius: 10px;">
+              <h2 style="color: #007aff;">ברוכים הבאים למערכת ההודעות!</h2>
+              <p>כדי להשלים את תהליך ההרשמה, אנא הזן את הקוד הבא במערכת:</p>
+              <h1 style="color: #333; letter-spacing: 6px; background: #fff; padding: 15px; display: inline-block; border: 1px solid #ddd; border-radius: 8px;">${code}</h1>
+              <p style="color: #777; font-size: 13px;">* הקוד בתוקף ל-15 דקות. אם לא ביקשת להירשם, אנא התעלם מהודעה זו.</p>
             </div>
           `,
         },
@@ -34,14 +24,9 @@ export async function sendVerificationEmail(toEmail, code) {
 
   try {
     const response = await fetch(sendRequest);
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('MailChannels Error:', response.status, errorText);
-      return false;
-    }
-    return true;
+    return response.ok;
   } catch (error) {
-    console.error('Fetch Error:', error);
+    console.error('MailChannels Error:', error);
     return false;
   }
 }
