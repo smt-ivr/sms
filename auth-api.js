@@ -31,9 +31,11 @@ export default async function handleAuthApi(request, env) {
             await env.DB.prepare('DELETE FROM pending_users WHERE email = ?').bind(email).run(); // מניעת כפילות אם לחץ פעמיים
             await env.DB.prepare('INSERT INTO pending_users (email, code) VALUES (?, ?)').bind(email, verifyCode).run();
 
-            // שליחת המייל
-            const emailSent = await sendVerificationEmail(email, verifyCode);
-            if (!emailSent) return new Response(JSON.stringify({ error: 'שגיאה בשליחת המייל, אנא בדוק את הכתובת ונסה שנית.' }), { status: 500 });
+            // שליחת המייל (החלק המעודכן לתפיסת שגיאות מפורטות)
+            const emailResult = await sendVerificationEmail(email, verifyCode);
+            if (!emailResult.success) {
+                return new Response(JSON.stringify({ error: `שגיאת שרת מייל: ${emailResult.message}` }), { status: 500 });
+            }
 
             return new Response(JSON.stringify({ success: true }));
         }
