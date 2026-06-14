@@ -20,12 +20,13 @@ export default `<!DOCTYPE html>
         .toast.success { background: var(--success); }
 
         /* Login Screen */
-        #login-screen { position: absolute; inset: 0; background: var(--bg); display: flex; justify-content: center; align-items: center; z-index: 5000; }
-        .login-box { background: var(--card); padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
+        #login-screen { position: absolute; inset: 0; background: var(--bg); display: flex; justify-content: center; align-items: center; z-index: 5000; overflow-y: auto; padding: 20px; }
+        .login-box { background: var(--card); padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 420px; text-align: center; }
         .login-tabs { display: flex; gap: 10px; margin-bottom: 20px; background: var(--bg); padding: 5px; border-radius: 8px; }
         .login-tab { flex: 1; padding: 10px; cursor: pointer; border-radius: 6px; transition: 0.2s; font-weight: 500; }
         .login-tab.active { background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); color: var(--secondary); }
-        .login-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px; text-align: center; }
+        .login-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; text-align: center; background: #fff; transition: 0.2s; }
+        .login-input:focus { outline: none; border-color: var(--secondary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
         .btn-full { width: 100%; padding: 12px; background: var(--secondary); color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: bold; transition: 0.2s; }
         .btn-full:hover { background: #2563eb; }
 
@@ -78,7 +79,7 @@ export default `<!DOCTYPE html>
 </head>
 <body>
 
-    <div id="global-loader" class="hidden"><div class="spinner"></div><div style="margin-top:15px; font-weight:bold;">טוען נתונים...</div></div>
+    <div id="global-loader" class="hidden"><div class="spinner"></div><div style="margin-top:15px; font-weight:bold;" id="loader-text">טוען נתונים...</div></div>
     <div id="toast" class="toast">הודעה</div>
 
     <div id="login-screen">
@@ -86,20 +87,50 @@ export default `<!DOCTYPE html>
             <span class="material-symbols-rounded" style="font-size: 48px; color: var(--secondary);">admin_panel_settings</span>
             <h2 style="margin: 10px 0 25px;">ברוך הבא לפורטל</h2>
             
-            <div class="login-tabs">
-                <div class="login-tab active" onclick="switchLogin('user')" id="tab-user">לקוח / משתמש</div>
-                <div class="login-tab" onclick="switchLogin('admin')" id="tab-admin">מנהל מערכת</div>
+            <div id="login-sections">
+                <div class="login-tabs">
+                    <div class="login-tab active" onclick="switchLogin('user')" id="tab-user">לקוח / משתמש</div>
+                    <div class="login-tab" onclick="switchLogin('admin')" id="tab-admin">מנהל מערכת</div>
+                </div>
+
+                <div id="form-user">
+                    <input type="password" id="login-code" class="login-input" placeholder="הכנס קוד אישי כאן..." />
+                    <button class="btn-full" onclick="loginUser()">התחבר לחשבון</button>
+                    <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border);">
+                        <a href="#" onclick="toggleRegister(true)" style="color: var(--secondary); text-decoration: none; font-size: 15px; font-weight: 500;">אין לך עדיין חשבון? הירשם עכשיו</a>
+                    </div>
+                </div>
+
+                <div id="form-admin" class="hidden">
+                    <input type="password" id="login-pass" class="login-input" placeholder="הכנס סיסמת מנהל..." />
+                    <button class="btn-full" onclick="loginAdmin()">התחבר לניהול</button>
+                </div>
             </div>
 
-            <div id="form-user">
-                <input type="password" id="login-code" class="login-input" placeholder="הכנס קוד אישי כאן..." />
-                <button class="btn-full" onclick="loginUser()">התחבר לחשבון</button>
-            </div>
+            <div id="register-sections" class="hidden">
+                <h3 style="margin-bottom: 20px; color: var(--primary);">יצירת חשבון לקוח</h3>
+                
+                <div id="reg-init-section">
+                    <input type="text" id="reg-name" class="login-input" placeholder="שם מלא / שם העסק" />
+                    <input type="email" id="reg-email" class="login-input" placeholder="כתובת אימייל (תידרש לאימות)" dir="ltr" />
+                    <input type="email" id="reg-email-confirm" class="login-input" placeholder="אימות כתובת אימייל" dir="ltr" />
+                    <input type="password" id="reg-code" class="login-input" placeholder="בחר קוד סודי (6-15 ספרות)" />
+                    <button class="btn-full" onclick="registerInit()" style="background: var(--success); margin-top: 5px;">שלח קוד אימות למייל</button>
+                </div>
 
-            <div id="form-admin" class="hidden">
-                <input type="password" id="login-pass" class="login-input" placeholder="הכנס סיסמת מנהל..." />
-                <button class="btn-full" onclick="loginAdmin()">התחבר לניהול</button>
+                <div id="reg-verify-section" class="hidden">
+                    <div style="background: #eff6ff; padding: 15px; border-radius: 8px; margin-bottom: 15px; color: #1e40af; font-size: 14px;">
+                        קוד אימות בן 6 ספרות נשלח כעת לאימייל שלך.
+                    </div>
+                    <input type="text" id="reg-verify-code" class="login-input" placeholder="הכנס קוד אימות (6 ספרות)" maxlength="6" style="letter-spacing: 5px; font-size: 18px;" />
+                    <button class="btn-full" onclick="registerVerify()" style="background: var(--success);">אמת חשבון והיכנס</button>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <a href="#" onclick="toggleRegister(false)" style="color: #64748b; text-decoration: none; font-size: 14px;">חזרה למסך התחברות</a>
+                </div>
             </div>
+            
         </div>
     </div>
 
@@ -137,12 +168,15 @@ export default `<!DOCTYPE html>
         let currentView = '';
 
         // --- UI Utilities ---
-        function showLoader(show=true) { document.getElementById('global-loader').classList.toggle('hidden', !show); }
+        function showLoader(show=true, text="טוען נתונים...") { 
+            document.getElementById('loader-text').textContent = text;
+            document.getElementById('global-loader').classList.toggle('hidden', !show); 
+        }
         function showToast(msg, type='success') {
             const toast = document.getElementById('toast');
             toast.textContent = msg;
             toast.className = \`toast \${type} show\`;
-            setTimeout(() => toast.classList.remove('show'), 3000);
+            setTimeout(() => toast.classList.remove('show'), 4000);
         }
         function switchLogin(type) {
             document.getElementById('tab-user').classList.toggle('active', type==='user');
@@ -153,7 +187,6 @@ export default `<!DOCTYPE html>
 
         // --- Fetch Wrapper ---
         async function apiCall(endpoint, method='GET', body=null) {
-            showLoader();
             const headers = { 'Content-Type': 'application/json' };
             if(currentRole === 'admin') headers['x-admin-password'] = credentials;
             if(currentRole === 'user') headers['x-user-code'] = credentials;
@@ -161,7 +194,6 @@ export default `<!DOCTYPE html>
             try {
                 const res = await fetch('/sms' + endpoint, { method, headers, body: body ? JSON.stringify(body) : null });
                 const data = await res.json();
-                showLoader(false);
                 
                 if(!res.ok) {
                     if(res.status === 401 || res.status === 403) logout(data.error || "גישה נדחתה");
@@ -175,13 +207,71 @@ export default `<!DOCTYPE html>
             }
         }
 
+        // =====================================
+        // Registration Logic
+        // =====================================
+        function toggleRegister(show) {
+            document.getElementById('login-sections').classList.toggle('hidden', show);
+            document.getElementById('register-sections').classList.toggle('hidden', !show);
+            document.getElementById('reg-init-section').classList.remove('hidden');
+            document.getElementById('reg-verify-section').classList.add('hidden');
+        }
+
+        async function registerInit() {
+            const name = document.getElementById("reg-name").value.trim();
+            const email = document.getElementById("reg-email").value.trim();
+            const emailConfirm = document.getElementById("reg-email-confirm").value.trim();
+            const code = document.getElementById("reg-code").value.trim();
+
+            if (!name || !email || !emailConfirm || !code) return showToast('נא למלא את כל השדות', 'error');
+            if (email !== emailConfirm) return showToast('כתובות האימייל אינן תואמות', 'error');
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast('אימייל אינו תקין', 'error');
+            if (code.length < 6 || code.length > 15 || !/^\d+$/.test(code)) return showToast('הקוד האישי חייב להיות 6 עד 15 ספרות', 'error');
+
+            showLoader(true, "שולח קוד אימות למייל...");
+            try {
+                await apiCall('/api/auth/register/init', 'POST', { email, name, personalCode: code });
+                showLoader(false);
+                document.getElementById('reg-init-section').classList.add('hidden');
+                document.getElementById('reg-verify-section').classList.remove('hidden');
+                showToast("קוד אימות נשלח בהצלחה למייל!", "success");
+            } catch (e) {
+                // apiCall already shows the error toast
+            }
+        }
+
+        async function registerVerify() {
+            const email = document.getElementById("reg-email").value.trim();
+            const name = document.getElementById("reg-name").value.trim();
+            const personalCode = document.getElementById("reg-code").value.trim();
+            const verifyCode = document.getElementById("reg-verify-code").value.trim();
+
+            if (!verifyCode || verifyCode.length !== 6) return showToast("הזן קוד אימות חוקי בן 6 ספרות", "error");
+
+            showLoader(true, "מאמת ויוצר חשבון...");
+            try {
+                await apiCall('/api/auth/register/verify', 'POST', { email, verifyCode, name, personalCode });
+                showLoader(false);
+                showToast("החשבון נוצר בהצלחה! מתחבר...", "success");
+                
+                // Reset form and auto-login
+                toggleRegister(false);
+                document.getElementById('login-code').value = personalCode;
+                setTimeout(() => { loginUser(); }, 500);
+
+            } catch (e) {}
+        }
+
+
         // --- Auth ---
         async function loginAdmin() {
             const pass = document.getElementById('login-pass').value;
             if(!pass) return showToast('הכנס סיסמה', 'error');
             credentials = pass; currentRole = 'admin';
+            showLoader(true, "מתחבר...");
             try {
                 await apiCall('/api/admin/codes'); // Test auth
+                showLoader(false);
                 initAdminApp();
             } catch(e) {}
         }
@@ -190,8 +280,10 @@ export default `<!DOCTYPE html>
             const code = document.getElementById('login-code').value;
             if(!code) return showToast('הכנס קוד', 'error');
             credentials = code; currentRole = 'user';
+            showLoader(true, "מתחבר...");
             try {
                 const data = await apiCall('/api/user/data');
+                showLoader(false);
                 initUserApp(data.user);
             } catch(e) {}
         }
@@ -202,6 +294,7 @@ export default `<!DOCTYPE html>
             document.getElementById('login-screen').style.display = 'flex';
             document.getElementById('login-pass').value = '';
             document.getElementById('login-code').value = '';
+            toggleRegister(false); // Make sure to reset to login screen
             if(msg) showToast(msg, 'error');
         }
 
@@ -250,6 +343,7 @@ export default `<!DOCTYPE html>
         async function loadAdminView(view) {
             currentView = view;
             const container = document.getElementById('view-container');
+            showLoader();
             
             if(view === 'users') {
                 setTopbar('ניהול לקוחות וקודים', 'group');
@@ -302,12 +396,15 @@ export default `<!DOCTYPE html>
                         </div>
                     </div>\`;
             }
+            showLoader(false);
         }
 
         async function changeAdminPass() {
             const newPassword = document.getElementById('new-admin-pass').value;
             if(!newPassword) return;
+            showLoader();
             await apiCall('/api/admin/settings/password', 'POST', {newPassword});
+            showLoader(false);
             showToast('הסיסמה שונתה בהצלחה');
             credentials = newPassword;
             document.getElementById('new-admin-pass').value = '';
@@ -315,7 +412,9 @@ export default `<!DOCTYPE html>
 
         async function deleteUser(id) {
             if(!confirm('מחיקת משתמש תמחק גם את המערכות וההיסטוריה שלו. להמשיך?')) return;
+            showLoader();
             await apiCall(\`/api/admin/codes/\${id}\`, 'DELETE');
+            showLoader(false);
             showToast('משתמש נמחק');
             loadAdminView('users');
         }
@@ -337,6 +436,7 @@ export default `<!DOCTYPE html>
                     max_systems: parseInt(document.getElementById('m-max').value),
                     is_blocked: document.getElementById('m-block').checked ? 1 : 0
                 };
+                showLoader();
                 if(id) await apiCall(\`/api/admin/codes/\${id}\`, 'PUT', body);
                 else await apiCall('/api/admin/codes', 'POST', body);
                 
@@ -352,6 +452,7 @@ export default `<!DOCTYPE html>
         async function loadUserView(view) {
             currentView = view;
             const container = document.getElementById('view-container');
+            showLoader();
             
             if(view === 'systems') {
                 setTopbar('המערכות שלי', 'dns');
@@ -395,11 +496,14 @@ export default `<!DOCTYPE html>
                     \${logs.length === 0 ? '<tr><td colspan="3" style="text-align:center">טרם בוצעו כניסות</td></tr>' : ''}
                 </table></div>\`;
             }
+            showLoader(false);
         }
 
         async function deleteSystem(id) {
             if(!confirm('להסיר מערכת זו?')) return;
+            showLoader();
             await apiCall(\`/api/user/systems/\${id}\`, 'DELETE');
+            showLoader(false);
             showToast('המערכת הוסרה');
             loadUserView('systems');
         }
@@ -414,11 +518,12 @@ export default `<!DOCTYPE html>
                 const body = { description: document.getElementById('s-desc').value, token: document.getElementById('s-token').value };
                 if(!body.description || !body.token) return showToast('מלא את כל השדות', 'error');
                 
+                showLoader();
                 try {
                     if(id) await apiCall(\`/api/user/systems/\${id}\`, 'PUT', body);
                     else await apiCall('/api/user/systems', 'POST', body);
                     closeModal(); showToast('נשמר בהצלחה'); loadUserView('systems');
-                } catch(e) {} // Error handled in wrapper
+                } catch(e) { showLoader(false); }
             };
             document.getElementById('generic-modal').classList.add('show');
         }
