@@ -62,7 +62,7 @@ async function registerInit() {
 
     if (!name || !email || !emailConfirm || !code) return showToast('נא למלא את כל השדות בצורה תקינה', 'error');
     if (email !== emailConfirm) return showToast('כתובות האימייל שהוזנו אינן תואמות', 'error');
-    if (!isValidEmail(email)) return showToast('כתובת האימייל אינה בפורמט חוקי', 'error');
+    if (!isValidEmail(email)) return showToast('כתובת האימייל אינה בפורמט חוקי (לדוגמה: name@gmail.com)', 'error');
     if (code.length < 6 || code.length > 15 || !/^\\d+$/.test(code)) return showToast('הקוד הסודי חייב להכיל 6 עד 15 ספרות בלבד', 'error');
 
     showLoader(true, "מכין חשבון ושולח קוד אימות...");
@@ -72,7 +72,7 @@ async function registerInit() {
         document.getElementById('reg-init-section').classList.add('hidden');
         document.getElementById('reg-verify-section').classList.remove('hidden');
         showToast("קוד אימות נשלח בהצלחה למייל!", "success");
-    } catch (e) { }
+    } catch (e) {}
 }
 
 async function registerVerify() {
@@ -92,7 +92,6 @@ async function registerVerify() {
         toggleRegister(false);
         document.getElementById('login-code').value = personalCode;
         setTimeout(() => { loginUser(); }, 800);
-
     } catch (e) {}
 }
 
@@ -338,7 +337,7 @@ async function loadUserView(view) {
             \${logs.length === 0 ? '<tr><td colspan="3" style="text-align:center; padding:40px; color:var(--text-muted)">טרם בוצעו כניסות למערכות</td></tr>' : ''}
         </table></div>\`;
     }
-    
+
     if(view === 'temp_codes') {
         setTopbar('ניהול קודים זמניים', 'timer');
         const codes = await apiCall('/api/user/temp_codes');
@@ -412,13 +411,30 @@ window.openTempCodeModal = function(systemsJson) {
     document.getElementById('modal-body').innerHTML = \`
         <div class="form-group"><label>בחר מערכת</label>
         <select id="t-system" class="form-control">\${systems.map(s => \`<option value="\${s.id}">\${s.description}</option>\`).join('')}</select></div>
-        <div class="form-group"><label>זמן פעילות (בדקות)</label><input type="number" id="t-mins" class="form-control" value="10"></div>
+        
+        <div class="form-group"><label>זמן פעילות (בדקות)</label>
+        <input type="number" id="t-mins" class="form-control" value="10"></div>
+        
+        <div class="form-group"><label>קוד מותאם אישית (אופציונלי)</label>
+        <input type="text" id="t-custom" class="form-control" placeholder="השאר ריק להגרלה אוטומטית"></div>
+        
+        <div class="form-group" style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+            <input type="checkbox" id="t-numeric" style="width:18px; height:18px;">
+            <label style="margin:0; font-size:15px; cursor:pointer;" for="t-numeric">הגרל קוד של ספרות בלבד</label>
+        </div>
     \`;
     document.getElementById('modal-save-btn').onclick = async () => {
-        const body = { systemId: document.getElementById('t-system').value, durationMinutes: parseInt(document.getElementById('t-mins').value) };
+        const body = { 
+            systemId: document.getElementById('t-system').value, 
+            durationMinutes: parseInt(document.getElementById('t-mins').value),
+            customCode: document.getElementById('t-custom').value,
+            isNumeric: document.getElementById('t-numeric').checked
+        };
         showLoader();
-        await apiCall('/api/user/temp_codes', 'POST', body);
-        closeModal(); showToast('קוד הונפק בהצלחה'); loadUserView('temp_codes');
+        try {
+            await apiCall('/api/user/temp_codes', 'POST', body);
+            closeModal(); showToast('קוד הונפק בהצלחה'); loadUserView('temp_codes');
+        } catch(e) { showLoader(false); }
     };
     document.getElementById('generic-modal').classList.add('show');
 };
