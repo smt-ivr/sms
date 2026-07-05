@@ -2,7 +2,6 @@ export default `let currentRole = null;
 let credentials = null;
 let currentView = '';
 
-// --- חווית משתמש (UI) ---
 function showLoader(show=true, text="טוען נתונים...") { 
     document.getElementById('loader-text').textContent = text;
     document.getElementById('global-loader').classList.toggle('hidden', !show); 
@@ -22,7 +21,6 @@ function switchLogin(type) {
     document.getElementById('form-admin').classList.toggle('hidden', type==='user');
 }
 
-// --- פונקציית API ראשית ---
 async function apiCall(endpoint, method='GET', body=null) {
     const headers = { 'Content-Type': 'application/json' };
     if(currentRole === 'admin') headers['x-admin-password'] = credentials;
@@ -44,9 +42,6 @@ async function apiCall(endpoint, method='GET', body=null) {
     }
 }
 
-// =====================================
-// לוגיקת הרשמה מורחבת
-// =====================================
 function toggleRegister(show) {
     document.getElementById('login-sections').classList.toggle('hidden', show);
     document.getElementById('register-sections').classList.toggle('hidden', !show);
@@ -67,7 +62,7 @@ async function registerInit() {
 
     if (!name || !email || !emailConfirm || !code) return showToast('נא למלא את כל השדות בצורה תקינה', 'error');
     if (email !== emailConfirm) return showToast('כתובות האימייל שהוזנו אינן תואמות', 'error');
-    if (!isValidEmail(email)) return showToast('כתובת האימייל אינה בפורמט חוקי (לדוגמה: name@gmail.com)', 'error');
+    if (!isValidEmail(email)) return showToast('כתובת האימייל אינה בפורמט חוקי', 'error');
     if (code.length < 6 || code.length > 15 || !/^\\d+$/.test(code)) return showToast('הקוד הסודי חייב להכיל 6 עד 15 ספרות בלבד', 'error');
 
     showLoader(true, "מכין חשבון ושולח קוד אימות...");
@@ -77,9 +72,7 @@ async function registerInit() {
         document.getElementById('reg-init-section').classList.add('hidden');
         document.getElementById('reg-verify-section').classList.remove('hidden');
         showToast("קוד אימות נשלח בהצלחה למייל!", "success");
-    } catch (e) {
-        // השגיאה מטופלת אוטומטית ב-apiCall
-    }
+    } catch (e) { }
 }
 
 async function registerVerify() {
@@ -103,7 +96,6 @@ async function registerVerify() {
     } catch (e) {}
 }
 
-// --- מערכת התחברות ---
 async function loginAdmin() {
     const pass = document.getElementById('login-pass').value;
     if(!pass) return showToast('נא להזין סיסמת מנהל', 'error');
@@ -138,7 +130,6 @@ function logout(msg=null) {
     if(msg) showToast(msg, 'error');
 }
 
-// --- טעינת ממשקים ---
 function initAdminApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app-layout').style.display = 'flex';
@@ -162,6 +153,7 @@ function initUserApp(user) {
     menu.innerHTML = \`
         <div class="menu-item" onclick="loadUserView('systems')"><span class="material-symbols-rounded">dns</span> המערכות שלי</div>
         <div class="menu-item" onclick="loadUserView('logs')"><span class="material-symbols-rounded">history</span> היסטוריית כניסות</div>
+        \${user.allow_temp_codes ? \`<div class="menu-item" onclick="loadUserView('temp_codes')"><span class="material-symbols-rounded">timer</span> קודים זמניים (Proxy)</div>\` : ''}
     \`;
     loadUserView('systems');
 }
@@ -177,9 +169,6 @@ function setTopbar(title, icon) {
     if(event && event.currentTarget) event.currentTarget.classList.add('active');
 }
 
-// =====================================
-// מנהל - תצוגות (Admin Views)
-// =====================================
 async function loadAdminView(view) {
     currentView = view;
     const container = document.getElementById('view-container');
@@ -206,14 +195,15 @@ async function loadAdminView(view) {
                     <button class="btn-primary" onclick="openAdminUserModal()"><span class="material-symbols-rounded">person_add</span> הוסף משתמש</button>
                 </div>
                 <table>
-                    <tr><th>מזהה</th><th>שם / חברה</th><th>קוד סודי</th><th>ניצול מערכות</th><th>סטטוס</th><th>פעולות</th></tr>
+                    <tr><th>מזהה</th><th>שם / חברה</th><th>קוד סודי</th><th>ניצול מערכות</th><th>סטטוס</th><th>הרשאת Proxy</th><th>פעולות</th></tr>
                     \${users.map(u => \`
                         <tr>
                             <td>#\${u.id}</td><td style="font-weight:bold;">\${u.owner_name}</td><td>\${u.code}</td>
                             <td>\${u.current_systems} / \${u.max_systems}</td>
                             <td><span class="badge \${u.is_blocked ? 'red' : 'green'}">\${u.is_blocked ? 'חסום' : 'פעיל'}</span></td>
+                            <td>\${u.allow_temp_codes ? '<span class="badge green">כן</span>' : '<span class="badge red">לא</span>'}</td>
                             <td>
-                                <button class="btn-outline" style="padding:6px 12px; border-radius:8px;" onclick="openAdminUserModal(\${u.id}, '\${u.code}', '\${u.owner_name}', \${u.max_systems}, \${u.is_blocked})">ערוך</button>
+                                <button class="btn-outline" style="padding:6px 12px; border-radius:8px;" onclick="openAdminUserModal(\${u.id}, '\${u.code}', '\${u.owner_name}', \${u.max_systems}, \${u.is_blocked}, \${u.allow_temp_codes})">ערוך</button>
                                 <button class="btn-outline" style="padding:6px 12px; border-radius:8px; border-color:var(--danger); color:var(--danger);" onclick="deleteUser(\${u.id})">מחק</button>
                             </td>
                         </tr>
@@ -269,7 +259,7 @@ async function deleteUser(id) {
     loadAdminView('users');
 }
 
-function openAdminUserModal(id=null, code='', name='', max=5, blocked=0) {
+window.openAdminUserModal = function(id=null, code='', name='', max=5, blocked=0, allowTemp=0) {
     document.getElementById('modal-title').textContent = id ? 'עריכת פרטי לקוח' : 'הוספת לקוח חדש';
     document.getElementById('modal-body').innerHTML = \`
         <div class="form-group"><label>שם הלקוח / העסק</label><input type="text" id="m-name" class="form-control" value="\${name}"></div>
@@ -279,13 +269,18 @@ function openAdminUserModal(id=null, code='', name='', max=5, blocked=0) {
             <input type="checkbox" id="m-block" \${blocked ? 'checked' : ''} style="width:18px; height:18px;">
             <label style="margin:0; font-size:15px; color:var(--danger)">משתמש חסום לגישה</label>
         </div>
+        <div class="form-group" style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+            <input type="checkbox" id="m-temp-codes" \${allowTemp ? 'checked' : ''} style="width:18px; height:18px;">
+            <label style="margin:0; font-size:15px; color:var(--success)">הרשאה להנפקת קודים זמניים (Proxy)</label>
+        </div>
     \`;
     document.getElementById('modal-save-btn').onclick = async () => {
         const body = {
             owner_name: document.getElementById('m-name').value,
             code: document.getElementById('m-code').value,
             max_systems: parseInt(document.getElementById('m-max').value),
-            is_blocked: document.getElementById('m-block').checked ? 1 : 0
+            is_blocked: document.getElementById('m-block').checked ? 1 : 0,
+            allow_temp_codes: document.getElementById('m-temp-codes').checked ? 1 : 0
         };
         showLoader();
         if(id) await apiCall(\`/api/admin/codes/\${id}\`, 'PUT', body);
@@ -296,9 +291,6 @@ function openAdminUserModal(id=null, code='', name='', max=5, blocked=0) {
     document.getElementById('generic-modal').classList.add('show');
 }
 
-// =====================================
-// משתמש - תצוגות (User Views)
-// =====================================
 async function loadUserView(view) {
     currentView = view;
     const container = document.getElementById('view-container');
@@ -346,6 +338,40 @@ async function loadUserView(view) {
             \${logs.length === 0 ? '<tr><td colspan="3" style="text-align:center; padding:40px; color:var(--text-muted)">טרם בוצעו כניסות למערכות</td></tr>' : ''}
         </table></div>\`;
     }
+    
+    if(view === 'temp_codes') {
+        setTopbar('ניהול קודים זמניים', 'timer');
+        const codes = await apiCall('/api/user/temp_codes');
+        const { systems } = await apiCall('/api/user/data');
+        
+        container.innerHTML = \`
+            <div class="card">
+                <div class="card-header">
+                    <h3>קודים פעילים</h3>
+                    <button class="btn-primary" onclick="openTempCodeModal('\${encodeURIComponent(JSON.stringify(systems))}')"><span class="material-symbols-rounded">add</span> הנפק קוד</button>
+                </div>
+                <table>
+                    <tr><th>קוד זמני</th><th>מערכת מקושרת</th><th>תפוגה</th><th>שימושים</th><th>סטטוס</th><th>פעולות</th></tr>
+                    \${codes.map(c => {
+                        const isExpired = Date.now() > c.expires_at;
+                        const timeStr = new Date(c.expires_at).toLocaleString('he-IL', {timeZone: 'Asia/Jerusalem'});
+                        return \`<tr>
+                            <td style="font-family:monospace; font-weight:bold; font-size:16px;">\${c.temp_code}</td>
+                            <td>\${c.system_desc}</td>
+                            <td style="direction:ltr">\${timeStr}</td>
+                            <td>\${c.usage_count}</td>
+                            <td><span class="badge \${c.is_active && !isExpired ? 'green' : 'red'}">\${c.is_active ? (isExpired ? 'פג תוקף' : 'פעיל') : 'מושבת'}</span></td>
+                            <td>
+                                <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageTempCode(\${c.id}, 'extend')">הארך ב-10 דק'</button>
+                                <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageTempCode(\${c.id}, 'toggle')">\${c.is_active ? 'השבת' : 'הפעל'}</button>
+                                <button class="btn-outline" style="padding:6px; border-radius:8px; border-color:var(--danger); color:var(--danger);" onclick="manageTempCode(\${c.id}, 'delete')">מחק</button>
+                            </td>
+                        </tr>\`;
+                    }).join('')}
+                </table>
+            </div>\`;
+    }
+
     showLoader(false);
 }
 
@@ -358,7 +384,7 @@ async function deleteSystem(id) {
     loadUserView('systems');
 }
 
-function openUserSystemModal(id, desc, token) {
+window.openUserSystemModal = function(id, desc, token) {
     document.getElementById('modal-title').textContent = id ? 'עריכת פרטי מערכת' : 'הוספת מערכת לחיבור';
     document.getElementById('modal-body').innerHTML = \`
         <div class="form-group"><label>תיאור / שם למערכת (למשל: תמיכה טכנית)</label><input type="text" id="s-desc" class="form-control" value="\${desc}"></div>
@@ -378,5 +404,47 @@ function openUserSystemModal(id, desc, token) {
     document.getElementById('generic-modal').classList.add('show');
 }
 
+window.openTempCodeModal = function(systemsJson) {
+    const systems = JSON.parse(decodeURIComponent(systemsJson));
+    if(systems.length === 0) return showToast('אין מערכות מקושרות לחשבון', 'error');
+    
+    document.getElementById('modal-title').textContent = 'הנפקת קוד זמני חדש';
+    document.getElementById('modal-body').innerHTML = \`
+        <div class="form-group"><label>בחר מערכת</label>
+        <select id="t-system" class="form-control">\${systems.map(s => \`<option value="\${s.id}">\${s.description}</option>\`).join('')}</select></div>
+        <div class="form-group"><label>זמן פעילות (בדקות)</label><input type="number" id="t-mins" class="form-control" value="10"></div>
+    \`;
+    document.getElementById('modal-save-btn').onclick = async () => {
+        const body = { systemId: document.getElementById('t-system').value, durationMinutes: parseInt(document.getElementById('t-mins').value) };
+        showLoader();
+        await apiCall('/api/user/temp_codes', 'POST', body);
+        closeModal(); showToast('קוד הונפק בהצלחה'); loadUserView('temp_codes');
+    };
+    document.getElementById('generic-modal').classList.add('show');
+};
+
+window.manageTempCode = async function(id, action) {
+    if(action === 'delete' && !confirm('למחוק את הקוד?')) return;
+    showLoader();
+    if(action === 'delete') await apiCall(\`/api/user/temp_codes/\${id}\`, 'DELETE');
+    else await apiCall(\`/api/user/temp_codes/\${id}\`, 'PUT', {action});
+    showLoader(false); loadUserView('temp_codes');
+};
+
 function closeModal() { document.getElementById('generic-modal').classList.remove('show'); }
+
+window.loginAdmin = loginAdmin;
+window.loginUser = loginUser;
+window.logout = logout;
+window.switchLogin = switchLogin;
+window.toggleRegister = toggleRegister;
+window.registerInit = registerInit;
+window.registerVerify = registerVerify;
+window.refreshCurrentData = refreshCurrentData;
+window.loadAdminView = loadAdminView;
+window.loadUserView = loadUserView;
+window.changeAdminPass = changeAdminPass;
+window.deleteUser = deleteUser;
+window.deleteSystem = deleteSystem;
+window.closeModal = closeModal;
 `;
