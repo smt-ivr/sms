@@ -14,8 +14,8 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // ניתוב ל-Proxy
-    if (path.startsWith('/api/proxy/')) {
+    // ניתוב ל-Proxy (תומך בנתיב המלא)
+    if (path.startsWith('/sms/api/proxy/') || path.startsWith('/api/proxy/')) {
       return handleProxyApi(request, env);
     }
 
