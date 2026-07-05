@@ -10,7 +10,6 @@ const loader = document.getElementById("loader");
 const loaderTextMain = document.getElementById("loader-text-main");
 const loginScreen = document.getElementById("login-screen");
 const appScreen = document.getElementById("app-screen");
-const errorEl = document.getElementById("login-error");
 
 const contactsListEl = document.getElementById("contacts-list");
 const chatMessagesEl = document.getElementById("chat-messages");
@@ -34,7 +33,8 @@ let modalCallback = null;
 // פונקציית fetch מאוחדת התומכת בפרוקסי
 async function apiFetch(endpoint, paramsStr) {
     if (isTempMode) {
-        const res = await fetch(\`/api/proxy/\${endpoint}?\${paramsStr}\`, { headers: { 'x-temp-code': token } });
+        // התיקון המרכזי לניתוב ה-Proxy מתוך תת-תיקייה
+        const res = await fetch(\`/sms/api/proxy/\${endpoint}?\${paramsStr}\`, { headers: { 'x-temp-code': token } });
         if (!res.ok) throw new Error(await res.text());
         return res;
     } else {
@@ -42,20 +42,23 @@ async function apiFetch(endpoint, paramsStr) {
     }
 }
 
-// ==========================================
-// איתחול מערכת
-// ==========================================
+// ניהול הודעות שגיאה במסך התחברות
+function showError(msg) {
+    document.getElementById("login-error-text").textContent = msg;
+    document.getElementById("login-error").classList.remove("hidden");
+}
+function hideError() {
+    document.getElementById("login-error").classList.add("hidden");
+}
+
 window.addEventListener("DOMContentLoaded", () => {
-    if (window.innerWidth <= 768) {
-        chatArea.classList.add("hidden-mobile");
-    }
-
+    if (window.innerWidth <= 768) chatArea.classList.add("hidden-mobile");
     checkUrlParams();
-
     if (token) {
         verifyAndLoad();
     } else {
-        document.getElementById("personal-code-input").focus();
+        const pInput = document.getElementById("personal-code-input");
+        if(pInput) pInput.focus();
     }
 });
 
@@ -91,7 +94,7 @@ function verifyAndLoad() {
             mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">timer</span>
             <div style="display:flex; flex-direction:column; line-height:1.1;">
                 <span>חיבור מאובטח</span>
-                <span style="font-size:9px; opacity:0.8; font-weight:normal; max-width:85px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Proxy (זמני)">Proxy (זמני)</span>
+                <span style="font-size:9px; opacity:0.8; font-weight:normal;">Proxy (זמני)</span>
             </div>\`;
         }
         loadAllMessages();
@@ -111,16 +114,15 @@ function verifyAndLoad() {
             mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">verified_user</span>
             <div style="display:flex; flex-direction:column; line-height:1.1;">
                 <span>טוקן מאומת</span>
-                <span style="font-size:9px; opacity:0.8; font-weight:normal; max-width:85px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="\${reasonText}">\${reasonText}</span>
+                <span style="font-size:9px; opacity:0.8; font-weight:normal;">\${reasonText}</span>
             </div>\`;
         }
-        
         loadAllMessages();
         pollInterval = setInterval(() => loadAllMessages(true), 10000);
         
     }, (err) => {
         loader.classList.add("hidden");
-        errorEl.textContent = err || "פג תוקף או שגיאת אימות";
+        showError(err || "פג תוקף או שגיאת אימות");
         logoutProcess();
     });
 }
@@ -156,11 +158,7 @@ function logoutProcess() {
     document.getElementById("password").value = "";
     document.getElementById("token-input").value = "";
     document.getElementById("personal-code-input").value = "";
-    
-    const tempInput = document.getElementById("temp-code-chat-input");
-    if(tempInput) tempInput.value = "";
-    
-    errorEl.textContent = "";
+    hideError();
     document.getElementById("personal-code-input").focus();
 
     if (window.innerWidth <= 768) {
@@ -170,9 +168,7 @@ function logoutProcess() {
 }
 
 document.getElementById("logout-btn").addEventListener("click", logoutProcess);
-document.getElementById("refresh-btn").addEventListener("click", () => {
-    loadAllMessages(false);
-});
+document.getElementById("refresh-btn").addEventListener("click", () => loadAllMessages(false));
 
 function showCustomAlert(title, text) {
     modalTitle.textContent = title;
@@ -273,23 +269,18 @@ async function loadAllMessages(isSilent = false) {
 
 function processMessages(inboxRows, outboxRows) {
     conversations = {};
-
     inboxRows.forEach(row => {
         const contact = normalizePhone(row.source);
         addMessageToConversation(contact, { text: row.message, time: row.receive_date, isOut: false });
     });
-
     outboxRows.forEach(row => {
         const contact = normalizePhone(row.To);
         addMessageToConversation(contact, { text: row.Message, time: row.Time, isOut: true, status: row.DeliveryReport });
     });
-
     for (let contact in conversations) {
         conversations[contact].sort((a, b) => new Date(a.time) - new Date(b.time));
     }
-
     renderContacts();
-    
     if (activeContact && conversations[activeContact]) {
         renderChat(activeContact, true); 
     }
@@ -304,7 +295,6 @@ function addMessageToConversation(contact, msgObj) {
 
 function renderContacts() {
     contactsListEl.innerHTML = "";
-    
     const sortedContacts = Object.keys(conversations).map(contact => {
         const msgs = conversations[contact];
         return { contact, lastMsg: msgs[msgs.length - 1] };
@@ -313,19 +303,15 @@ function renderContacts() {
     sortedContacts.forEach(item => {
         const div = document.createElement("div");
         div.className = "contact-item" + (activeContact === item.contact ? " active" : "");
-        
         const timeStr = formatMessageDate(item.lastMsg.time);
         const statusIcon = item.lastMsg.isOut ? getStatusIconHtml(item.lastMsg.status) : "";
-        
-        div.innerHTML = \`
-            <div class="contact-top"><span class="contact-name">\${item.contact}</span><span class="contact-time">\${timeStr}</span></div>
+        div.innerHTML = \`<div class="contact-top"><span class="contact-name">\${item.contact}</span><span class="contact-time">\${timeStr}</span></div>
             <div class="contact-last-msg">\${statusIcon} \${item.lastMsg.text}</div>\`;
         
         div.addEventListener("click", () => {
             activeContact = item.contact;
             renderContacts(); 
             renderChat(item.contact);
-            
             if (window.innerWidth <= 768) {
                 sidebar.classList.add("hidden-mobile");
                 chatArea.classList.remove("hidden-mobile");
@@ -338,10 +324,8 @@ function renderContacts() {
 function renderChat(contact, preserveScroll = false) {
     chatTitleEl.textContent = contact;
     chatPhoneEl.textContent = "הודעות SMS";
-    
     chatInputArea.classList.remove("hidden");
     const msgs = conversations[contact] || [];
-    
     const isAtBottom = chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop <= chatMessagesEl.clientHeight + 50;
 
     if (msgs.length === 0) {
@@ -353,25 +337,19 @@ function renderChat(contact, preserveScroll = false) {
     msgs.forEach(msg => {
         const timeStr = new Date(msg.time).toLocaleTimeString('he-IL', {hour: '2-digit', minute:'2-digit'});
         const statusIcon = msg.isOut ? getStatusIconHtml(msg.status) : "";
-        
         let safeText = msg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         const urlRegex = /(https?:\\/\\/[^\\s]+)/g;
         safeText = safeText.replace(urlRegex, function(url) {
             return \`<a href="\${url}" target="_blank" rel="noopener noreferrer" class="chat-link">\${url}</a>\`;
         });
         safeText = safeText.replace(/\\n/g, "<br>");
-        
         newHTML += \`<div class="message \${msg.isOut ? 'msg-out' : 'msg-in'}">
-            <div>\${safeText}</div>
-            <div class="msg-footer"><span class="msg-time">\${timeStr}</span> \${statusIcon}</div>
+            <div>\${safeText}</div><div class="msg-footer"><span class="msg-time">\${timeStr}</span> \${statusIcon}</div>
         </div>\`;
     });
     
     chatMessagesEl.innerHTML = newHTML;
-    
-    if (!preserveScroll || isAtBottom) {
-        chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-    }
+    if (!preserveScroll || isAtBottom) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 }
 
 sendBtn.addEventListener("click", sendSmsMessage);
@@ -394,7 +372,6 @@ async function sendSmsMessage() {
     try {
         const res = await apiFetch('SendSms', \`phones=\${activeContact}&message=\${encodeURIComponent(text)}\`);
         const data = await res.json();
-        
         if (data.responseStatus === "OK") {
             newMessageInput.value = "";
             await loadAllMessages(true);
@@ -412,37 +389,26 @@ async function sendSmsMessage() {
     }
 }
 
-// ==========================================
-// התחברות
-// ==========================================
-document.getElementById("username").addEventListener("keypress", (e) => {
-    if (e.key === "Enter") document.getElementById("password").focus();
-});
-document.getElementById("password").addEventListener("keypress", (e) => {
-    if (e.key === "Enter") document.getElementById("login-user-btn").click();
-});
-document.getElementById("token-input").addEventListener("keypress", (e) => {
-    if (e.key === "Enter") document.getElementById("login-token-btn").click();
-});
+
+document.getElementById("username").addEventListener("keypress", (e) => { if (e.key === "Enter") document.getElementById("password").focus(); });
+document.getElementById("password").addEventListener("keypress", (e) => { if (e.key === "Enter") document.getElementById("login-user-btn").click(); });
+document.getElementById("token-input").addEventListener("keypress", (e) => { if (e.key === "Enter") document.getElementById("login-token-btn").click(); });
+document.getElementById("personal-code-input").addEventListener("keypress", (e) => { if (e.key === "Enter") document.getElementById("login-personal-code-btn").click(); });
 
 document.getElementById("login-user-btn").addEventListener("click", () => {
     const user = document.getElementById("username").value.trim();
     const pass = document.getElementById("password").value.trim();
-    if (!user || !pass) {
-        errorEl.textContent = "נא להזין מספר מערכת וסיסמה.";
-        return;
-    }
+    if (!user || !pass) return showError("נא להזין מספר מערכת וסיסמה.");
     loginWithCredentials(user, pass);
 });
 
 async function loginWithCredentials(user, pass) {
-    errorEl.textContent = "";
+    hideError();
     loaderTextMain.textContent = "מתחבר למערכת...";
     loader.classList.remove("hidden");
     try {
         const res = await fetch(\`\${API_BASE}/Login?username=\${user}&password=\${pass}\`);
         const data = await res.json();
-        
         if (data.responseStatus === "OK" && data.token) {
             token = data.token;
             localStorage.setItem("ym_token", token);
@@ -450,11 +416,11 @@ async function loginWithCredentials(user, pass) {
             localStorage.setItem("ym_is_temp", "false");
             verifyAndLoad();
         } else {
-            errorEl.textContent = "שגיאה: פרטים שגויים או שהמערכת חסומה.";
+            showError("פרטים שגויים או שהמערכת חסומה.");
             loader.classList.add("hidden");
         }
     } catch (e) {
-        errorEl.textContent = "שגיאת רשת מול ימות המשיח.";
+        showError("שגיאת רשת מול ימות המשיח.");
         loader.classList.add("hidden");
     }
 }
@@ -470,38 +436,60 @@ document.getElementById("login-token-btn").addEventListener("click", () => {
     }
 });
 
-document.getElementById("personal-code-input").addEventListener("keypress", (e) => {
-    if (e.key === "Enter") document.getElementById("login-personal-code-btn").click();
+// המנגנון החכם: מאחד זיהוי קבוע וקוד זמני
+document.getElementById("login-personal-code-btn").addEventListener("click", async () => {
+    const code = document.getElementById("personal-code-input").value.trim();
+    if (!code) return showError("נא להזין קוד התחברות.");
+
+    hideError();
+    loaderTextMain.textContent = "מאמת קוד התחברות...";
+    loader.classList.remove("hidden");
+
+    try {
+        // שלב 1: בדיקה אם זהו קוד אישי קבוע
+        const res = await fetch('/sms/api/auth/systems', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code })
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            if (data.systems && data.systems.length > 0) {
+                loader.classList.add("hidden");
+                if (data.systems.length === 1) fetchTokenAndLogin(code, data.systems[0].id);
+                else showSystemSelector(code, data.systems);
+                return; // הקוד זוהה כקבוע בהצלחה
+            }
+        }
+
+        // שלב 2: אם זה לא קוד קבוע (או אין לו מערכות), נבדוק מול שרת ה-Proxy אם זה קוד זמני בתוקף
+        const tempRes = await fetch(\`/sms/api/proxy/GetIncomingSms?limit=1\`, { 
+            headers: { 'x-temp-code': code } 
+        });
+
+        if (tempRes.ok) {
+            const tempData = await tempRes.json();
+            if (tempData.responseStatus === "OK" || tempData.responseStatus === "False") {
+                token = code;
+                isTempMode = true;
+                localStorage.setItem("ym_token", token);
+                localStorage.setItem("ym_is_temp", "true");
+                verifyAndLoad(); 
+                return; // הקוד זוהה כזמני בהצלחה
+            }
+        }
+
+        // אם גם קבוע וגם זמני נכשלו:
+        loader.classList.add("hidden");
+        showError("הקוד שהוזן שגוי, מושבת או שפג תוקפו.");
+
+    } catch (e) {
+        loader.classList.add("hidden");
+        showError("שגיאת תקשורת מול השרת.");
+    }
 });
 
 document.getElementById("cancel-system-selector").addEventListener("click", () => {
     document.getElementById("system-selector-modal").classList.add("hidden");
-});
-
-document.getElementById("login-personal-code-btn").addEventListener("click", async () => {
-    const code = document.getElementById("personal-code-input").value.trim();
-    if (!code) return (errorEl.textContent = "נא להזין קוד אישי.");
-
-    errorEl.textContent = "";
-    loaderTextMain.textContent = "מזהה משתמש...";
-    loader.classList.remove("hidden");
-
-    try {
-        const res = await fetch('/sms/api/auth/systems', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code })
-        });
-        const data = await res.json();
-        loader.classList.add("hidden");
-
-        if (!res.ok) return (errorEl.textContent = data.error || "שגיאה בבדיקת הקוד");
-        if (!data.systems || data.systems.length === 0) return (errorEl.textContent = "אין מערכות לקוד זה.");
-
-        if (data.systems.length === 1) fetchTokenAndLogin(code, data.systems[0].id);
-        else showSystemSelector(code, data.systems);
-    } catch (e) {
-        loader.classList.add("hidden");
-        errorEl.textContent = "שגיאת תקשורת מול השרת.";
-    }
 });
 
 function showSystemSelector(code, systems) {
@@ -523,7 +511,6 @@ function showSystemSelector(code, systems) {
 async function fetchTokenAndLogin(code, systemId) {
     loaderTextMain.textContent = "מושך מפתח מערכת...";
     loader.classList.remove("hidden");
-
     try {
         const res = await fetch('/sms/api/auth/token', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, systemId })
@@ -531,7 +518,7 @@ async function fetchTokenAndLogin(code, systemId) {
         const data = await res.json();
         if (!res.ok) {
             loader.classList.add("hidden");
-            return (errorEl.textContent = data.error || "שגיאה במשיכת הטוקן");
+            return showError(data.error || "שגיאה במשיכת הטוקן");
         }
         token = data.token;
         localStorage.setItem("ym_token", token);
@@ -540,47 +527,8 @@ async function fetchTokenAndLogin(code, systemId) {
         verifyAndLoad();
     } catch (e) {
         loader.classList.add("hidden");
-        errorEl.textContent = "שגיאת תקשורת.";
+        showError("שגיאת תקשורת.");
     }
-}
-
-// לוגיקת קוד זמני
-const loginTempBtn = document.getElementById("login-temp-btn");
-if (loginTempBtn) {
-    loginTempBtn.addEventListener("click", async () => {
-        const tCode = document.getElementById("temp-code-chat-input").value.trim().toUpperCase();
-        if (!tCode) return (errorEl.textContent = "נא להזין קוד זמני.");
-        
-        errorEl.textContent = "";
-        loaderTextMain.textContent = "מאמת קוד זמני מול השרת...";
-        loader.classList.remove("hidden");
-        
-        token = tCode;
-        isTempMode = true;
-        localStorage.setItem("ym_token", token);
-        localStorage.setItem("ym_is_temp", "true");
-        
-        try {
-            const res = await apiFetch('GetIncomingSms', 'limit=1');
-            const data = await res.json();
-            
-            if (data.responseStatus === "OK" || data.responseStatus === "False") {
-                verifyAndLoad(); 
-            } else {
-                throw new Error("קוד שגוי");
-            }
-        } catch(e) {
-            loader.classList.add("hidden");
-            errorEl.textContent = "הקוד הזמני שגוי, מושבת או שפג תוקפו.";
-            logoutProcess();
-        }
-    });
-}
-const tempCodeChatInput = document.getElementById("temp-code-chat-input");
-if(tempCodeChatInput) {
-    tempCodeChatInput.addEventListener("keypress", (e) => {
-        if(e.key === "Enter") loginTempBtn.click();
-    });
 }
 
 function normalizePhone(phone) {
@@ -591,7 +539,6 @@ function normalizePhone(phone) {
     if (cleaned.startsWith('972')) return '0' + cleaned.substring(3);
     return cleaned || phone;
 }
-
 function formatMessageDate(dateString) {
     const date = new Date(dateString);
     const today = new Date();
@@ -601,7 +548,6 @@ function formatMessageDate(dateString) {
     if (date.toDateString() === yesterday.toDateString()) return \`אתמול, \${timeStr}\`;
     return \`\${date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })}, \${timeStr}\`;
 }
-
 function getStatusIconHtml(status) {
     if (!status) return "";
     switch(status) {
