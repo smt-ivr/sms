@@ -2,7 +2,6 @@ export default async function handleAdminApi(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
     
-    // --- אבטחה: זיהוי מנהל ---
     let storedAdminPass = null; 
     try {
         const record = await env.DB.prepare("SELECT value FROM settings WHERE key = 'admin_password'").first();
@@ -14,7 +13,6 @@ export default async function handleAdminApi(request, env) {
     const adminPass = request.headers.get('x-admin-password');
     const isAdmin = storedAdminPass && adminPass === storedAdminPass;
 
-    // --- אבטחה: זיהוי משתמש ---
     const userCodeHeader = request.headers.get('x-user-code');
     let currentUser = null;
     if (userCodeHeader) {
@@ -22,7 +20,6 @@ export default async function handleAdminApi(request, env) {
     }
     const isUser = currentUser && currentUser.is_blocked !== 1;
 
-    // --- חסימת גישה למי שאינו מורשה ---
     if (path.includes('/api/admin') && !isAdmin) return new Response(JSON.stringify({ error: 'Unauthorized Admin' }), { status: 401 });
     if (path.includes('/api/user') && !isUser) return new Response(JSON.stringify({ error: 'Unauthorized User or Blocked' }), { status: 401 });
 
@@ -30,7 +27,7 @@ export default async function handleAdminApi(request, env) {
         const method = request.method;
 
         // ==========================================
-        //  API עבור מנהל המערכת (Admin)
+        //  API עבור מנהל המערכת
         // ==========================================
         if (path.includes('/api/admin')) {
             if (method === 'GET') {
@@ -63,6 +60,9 @@ export default async function handleAdminApi(request, env) {
                     return new Response(JSON.stringify({ success: true }));
                 }
                 if (path.endsWith('/codes')) {
+                    const conflict = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = UPPER(?) AND expires_at > ?').bind(body.code, Date.now()).first();
+                    if(conflict) return new Response(JSON.stringify({ error: 'הקוד הסודי כבר בשימוש כקוד זמני במערכת' }), { status: 400 });
+                    
                     await env.DB.prepare('INSERT INTO access_codes (code, owner_name, max_systems, is_blocked, allow_temp_codes) VALUES (?, ?, ?, ?, ?)')
                         .bind(body.code, body.owner_name, body.max_systems || 5, body.is_blocked || 0, body.allow_temp_codes || 0).run();
                     return new Response(JSON.stringify({ success: true }));
@@ -72,6 +72,9 @@ export default async function handleAdminApi(request, env) {
                 const body = await request.json();
                 if (path.includes('/codes/')) {
                     const id = path.split('/').pop();
+                    const conflict = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = UPPER(?) AND expires_at > ?').bind(body.code, Date.now()).first();
+                    if(conflict) return new Response(JSON.stringify({ error: 'הקוד הסודי כבר בשימוש כקוד זמני במערכת' }), { status: 400 });
+
                     await env.DB.prepare('UPDATE access_codes SET code=?, owner_name=?, max_systems=?, is_blocked=?, allow_temp_codes=? WHERE id=?')
                         .bind(body.code, body.owner_name, body.max_systems, body.is_blocked, body.allow_temp_codes || 0, id).run();
                     return new Response(JSON.stringify({ success: true }));
@@ -106,7 +109,6 @@ export default async function handleAdminApi(request, env) {
                     `).bind(currentUser.id).all();
                     return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
                 }
-                
                 if (path.endsWith('/temp_codes')) {
                     if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
                     const { results } = await env.DB.prepare(`
@@ -114,17 +116,6 @@ export default async function handleAdminApi(request, env) {
                         (SELECT COUNT(*) FROM temp_access_logs WHERE temp_code_id = t.id) as usage_count
                         FROM temp_codes t JOIN system_tokens s ON t.system_id = s.id 
                         WHERE t.code_id = ? ORDER BY t.id DESC
-                    `).bind(currentUser.id).all();
-                    return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
-                }
-                if (path.endsWith('/temp_codes/logs')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
-                    const { results } = await env.DB.prepare(`
-                        SELECT l.*, t.temp_code, s.description 
-                        FROM temp_access_logs l
-                        JOIN temp_codes t ON l.temp_code_id = t.id
-                        JOIN system_tokens s ON t.system_id = s.id
-                        WHERE t.code_id = ? ORDER BY l.timestamp DESC LIMIT 50
                     `).bind(currentUser.id).all();
                     return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
                 }
@@ -143,7 +134,22 @@ export default async function handleAdminApi(request, env) {
                 if (path.endsWith('/temp_codes')) {
                     if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
                     const body = await request.json();
-                    const tempCodeStr = Math.random().toString(36).substring(2, 10).toUpperCase();
+                    
+                    let tempCodeStr = body.customCode ? body.customCode.trim().toUpperCase() : '';
+                    if (!tempCodeStr) {
+                        tempCodeStr = body.isNumeric 
+                            ? Math.floor(100000 + Math.random() * 900000).toString() 
+                            : Math.random().toString(36).substring(2, 10).toUpperCase();
+                    }
+
+                    // מניעת התנגשות קודים חכמה
+                    const conflictAccess = await env.DB.prepare('SELECT id FROM access_codes WHERE UPPER(code) = ?').bind(tempCodeStr).first();
+                    const conflictTemp = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = ? AND expires_at > ? AND is_active = 1').bind(tempCodeStr, Date.now()).first();
+                    
+                    if (conflictAccess || conflictTemp) {
+                        return new Response(JSON.stringify({error: 'הקוד שבחרת (או שהוגרל) כבר קיים במערכת, בחר קוד אחר.'}), {status: 400});
+                    }
+
                     const expiresAt = Date.now() + (body.durationMinutes * 60 * 1000);
                     await env.DB.prepare('INSERT INTO temp_codes (code_id, system_id, temp_code, expires_at) VALUES (?, ?, ?, ?)')
                         .bind(currentUser.id, body.systemId, tempCodeStr, expiresAt).run();
