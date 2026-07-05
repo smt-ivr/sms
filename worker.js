@@ -4,6 +4,7 @@ import mfaJsContent from './mfa.js';
 import appJsContent from './app.js';
 import handleAuthApi from './auth-api.js';
 import handleAdminApi from './admin-api.js';
+import handleProxyApi from './proxy-api.js';
 import adminHtmlContent from './admin-html.js';
 import adminCssContent from './admin-css.js';
 import adminAppJsContent from './admin-app.js';
@@ -12,6 +13,11 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // ניתוב ל-Proxy
+    if (path.startsWith('/api/proxy/')) {
+      return handleProxyApi(request, env);
+    }
 
     // ניתוב ל-API הניהול ופורטל המשתמשים
     if (path.includes('/api/admin') || path.includes('/api/user')) {
