@@ -2,8 +2,9 @@ export default `const API_BASE = "https://www.call2all.co.il/ym/api";
 let token = localStorage.getItem("ym_token") || "";
 let activeContact = null;
 let conversations = {};
-let lastDataHash = ""; // מזהה שינויים בשביל רענון שקט
-let pollInterval = null; // שומר את הטיימר של הרענון האוטומטי
+let lastDataHash = ""; 
+let pollInterval = null; 
+let isTempMode = localStorage.getItem("ym_is_temp") === "true";
 
 const loader = document.getElementById("loader");
 const loaderTextMain = document.getElementById("loader-text-main");
@@ -30,11 +31,21 @@ const modalOkBtn = document.getElementById("modal-ok-btn");
 const modalCancelBtn = document.getElementById("modal-cancel-btn");
 let modalCallback = null;
 
+// פונקציית fetch מאוחדת התומכת בפרוקסי
+async function apiFetch(endpoint, paramsStr) {
+    if (isTempMode) {
+        const res = await fetch(\`/api/proxy/\${endpoint}?\${paramsStr}\`, { headers: { 'x-temp-code': token } });
+        if (!res.ok) throw new Error(await res.text());
+        return res;
+    } else {
+        return await fetch(\`\${API_BASE}/\${endpoint}?token=\${token}&\${paramsStr}\`);
+    }
+}
+
 // ==========================================
 // איתחול מערכת
 // ==========================================
 window.addEventListener("DOMContentLoaded", () => {
-    // בברירת מחדל בנייד מראים את רשימת השיחות ומסתירים את הצ'אט
     if (window.innerWidth <= 768) {
         chatArea.classList.add("hidden-mobile");
     }
@@ -57,6 +68,8 @@ function checkUrlParams() {
     if (urlToken) {
         token = urlToken;
         localStorage.setItem("ym_token", token);
+        isTempMode = false;
+        localStorage.setItem("ym_is_temp", "false");
         cleanUrl();
     } else if (urlUser && urlPass) {
         loginWithCredentials(urlUser, urlPass);
@@ -70,6 +83,22 @@ function cleanUrl() {
 }
 
 function verifyAndLoad() {
+    if (isTempMode) {
+        loader.classList.add("hidden");
+        showApp();
+        if(mfaStatusBadge) {
+            mfaStatusBadge.classList.remove("hidden");
+            mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">timer</span>
+            <div style="display:flex; flex-direction:column; line-height:1.1;">
+                <span>חיבור מאובטח</span>
+                <span style="font-size:9px; opacity:0.8; font-weight:normal; max-width:85px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Proxy (זמני)">Proxy (זמני)</span>
+            </div>\`;
+        }
+        loadAllMessages();
+        pollInterval = setInterval(() => loadAllMessages(true), 10000);
+        return;
+    }
+
     loader.classList.remove("hidden");
     loaderTextMain.textContent = "מאמת נתונים...";
     
@@ -87,7 +116,6 @@ function verifyAndLoad() {
         }
         
         loadAllMessages();
-        // הפעלת רענון אוטומטי שקט כל 10 שניות
         pollInterval = setInterval(() => loadAllMessages(true), 10000);
         
     }, (err) => {
@@ -102,28 +130,23 @@ function showApp() {
     appScreen.classList.remove("hidden");
 }
 
-// ==========================================
-// התנתקות וניקוי מוחלט מהזיכרון
-// ==========================================
 function logoutProcess() {
-    // עצירת רענון אוטומטי
     if (pollInterval) {
         clearInterval(pollInterval);
         pollInterval = null;
     }
 
-    // מחיקת טוקנים ומשתנים
     localStorage.removeItem("ym_token");
+    localStorage.removeItem("ym_is_temp");
     token = "";
+    isTempMode = false;
     lastDataHash = "";
     conversations = {};
     activeContact = null;
 
-    // ניקוי טוטאלי של ה-DOM
     contactsListEl.innerHTML = "";
     chatMessagesEl.innerHTML = '<div class="empty-state"><span class="material-symbols-rounded empty-state-icon">forum</span><h3>התנתקת מהמערכת</h3></div>';
     
-    // איפוס ממשק לאיפוס ראשוני
     appScreen.classList.add("hidden");
     loginScreen.classList.remove("hidden");
     chatInputArea.classList.add("hidden");
@@ -133,6 +156,10 @@ function logoutProcess() {
     document.getElementById("password").value = "";
     document.getElementById("token-input").value = "";
     document.getElementById("personal-code-input").value = "";
+    
+    const tempInput = document.getElementById("temp-code-chat-input");
+    if(tempInput) tempInput.value = "";
+    
     errorEl.textContent = "";
     document.getElementById("personal-code-input").focus();
 
@@ -143,14 +170,10 @@ function logoutProcess() {
 }
 
 document.getElementById("logout-btn").addEventListener("click", logoutProcess);
-
 document.getElementById("refresh-btn").addEventListener("click", () => {
-    loadAllMessages(false); // קריאה לא שקטה, תציג את ה-Loader
+    loadAllMessages(false);
 });
 
-// ==========================================
-// ממשק משתמש כללי
-// ==========================================
 function showCustomAlert(title, text) {
     modalTitle.textContent = title;
     modalText.textContent = text;
@@ -187,7 +210,6 @@ modalInput.addEventListener("keypress", (e) => {
     if (e.key === "Enter") modalOkBtn.click();
 });
 
-// בנייד: חזרה מרשימת שיחות
 document.getElementById("back-btn").addEventListener("click", () => {
     chatArea.classList.add("hidden-mobile");
     sidebar.classList.remove("hidden-mobile");
@@ -220,31 +242,27 @@ document.getElementById("new-chat-btn").addEventListener("click", () => {
     });
 });
 
-// ==========================================
-// לוגיקת טעינת הודעות מ-API
-// ==========================================
 async function loadAllMessages(isSilent = false) {
     if (!isSilent) loader.classList.remove("hidden");
     
     try {
-        const resIn = await fetch(\`\${API_BASE}/GetIncomingSms?token=\${token}&limit=3000\`);
+        const resIn = await apiFetch('GetIncomingSms', 'limit=3000');
         const dataIn = await resIn.json();
         
-        const resOut = await fetch(\`\${API_BASE}/GetSmsOutLog?token=\${token}&limit=3000\`);
+        const resOut = await apiFetch('GetSmsOutLog', 'limit=3000');
         const dataOut = await resOut.json();
 
         if (dataIn.responseStatus !== "OK" || dataOut.responseStatus !== "OK") throw new Error("Token invalid");
 
-        // יצירת חותמת (Hash) לבדיקה אם משהו השתנה. אם לא, מונעים רינדור מחדש שקוטע הקלדה.
         const currentHash = JSON.stringify(dataIn.rows) + JSON.stringify(dataOut.rows);
-        if (isSilent && currentHash === lastDataHash) return; // לא השתנה כלום
+        if (isSilent && currentHash === lastDataHash) return; 
         lastDataHash = currentHash;
 
         processMessages(dataIn.rows || [], dataOut.rows || []);
     } catch (e) {
         if (!isSilent) {
             console.error(e);
-            if (e.message && (e.message.includes("Token invalid") || e.message.includes("Token expired"))) {
+            if (e.message && (e.message.includes("Token invalid") || e.message.includes("Token expired") || e.message.includes("קוד זמני שגוי") || e.message.includes("מושבת"))) {
                  logoutProcess();
             }
         }
@@ -273,7 +291,7 @@ function processMessages(inboxRows, outboxRows) {
     renderContacts();
     
     if (activeContact && conversations[activeContact]) {
-        renderChat(activeContact, true); // True = render without losing scroll position if typed
+        renderChat(activeContact, true); 
     }
 }
 
@@ -284,9 +302,6 @@ function addMessageToConversation(contact, msgObj) {
     if (!exists) conversations[contact].push(msgObj);
 }
 
-// ==========================================
-// רינדור (HTML)
-// ==========================================
 function renderContacts() {
     contactsListEl.innerHTML = "";
     
@@ -327,7 +342,6 @@ function renderChat(contact, preserveScroll = false) {
     chatInputArea.classList.remove("hidden");
     const msgs = conversations[contact] || [];
     
-    // בדיקה האם המשתמש נמצא כרגע למטה (כדי לגלול אוטומטית בהודעה חדשה)
     const isAtBottom = chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop <= chatMessagesEl.clientHeight + 50;
 
     if (msgs.length === 0) {
@@ -340,7 +354,6 @@ function renderChat(contact, preserveScroll = false) {
         const timeStr = new Date(msg.time).toLocaleTimeString('he-IL', {hour: '2-digit', minute:'2-digit'});
         const statusIcon = msg.isOut ? getStatusIconHtml(msg.status) : "";
         
-        // הגנה מפני HTML Injection והפיכת קישורים ללחיצים
         let safeText = msg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         const urlRegex = /(https?:\\/\\/[^\\s]+)/g;
         safeText = safeText.replace(urlRegex, function(url) {
@@ -361,9 +374,6 @@ function renderChat(contact, preserveScroll = false) {
     }
 }
 
-// ==========================================
-// שליחת הודעה
-// ==========================================
 sendBtn.addEventListener("click", sendSmsMessage);
 newMessageInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -382,14 +392,13 @@ async function sendSmsMessage() {
     newMessageInput.disabled = true;
     
     try {
-        const url = \`\${API_BASE}/SendSms?token=\${token}&phones=\${activeContact}&message=\${encodeURIComponent(text)}\`;
-        const res = await fetch(url);
+        const res = await apiFetch('SendSms', \`phones=\${activeContact}&message=\${encodeURIComponent(text)}\`);
         const data = await res.json();
         
         if (data.responseStatus === "OK") {
             newMessageInput.value = "";
-            await loadAllMessages(true); // רענון שקט כדי לראות את ההודעה מיד
-            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; // גלילה למטה
+            await loadAllMessages(true);
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; 
         } else {
             showCustomAlert("שגיאה", "ההודעה לא נשלחה: " + (data.message || ""));
         }
@@ -404,10 +413,8 @@ async function sendSmsMessage() {
 }
 
 // ==========================================
-// התחברות לחשבון
+// התחברות
 // ==========================================
-
-// מאזינים לשדות טכניים ולטוקן ישיר
 document.getElementById("username").addEventListener("keypress", (e) => {
     if (e.key === "Enter") document.getElementById("password").focus();
 });
@@ -418,7 +425,6 @@ document.getElementById("token-input").addEventListener("keypress", (e) => {
     if (e.key === "Enter") document.getElementById("login-token-btn").click();
 });
 
-// כניסה באמצעות שם משתמש וסיסמה (המערכת המקורית)
 document.getElementById("login-user-btn").addEventListener("click", () => {
     const user = document.getElementById("username").value.trim();
     const pass = document.getElementById("password").value.trim();
@@ -440,6 +446,8 @@ async function loginWithCredentials(user, pass) {
         if (data.responseStatus === "OK" && data.token) {
             token = data.token;
             localStorage.setItem("ym_token", token);
+            isTempMode = false;
+            localStorage.setItem("ym_is_temp", "false");
             verifyAndLoad();
         } else {
             errorEl.textContent = "שגיאה: פרטים שגויים או שהמערכת חסומה.";
@@ -451,13 +459,17 @@ async function loginWithCredentials(user, pass) {
     }
 }
 
-// כניסה עם טוקן ישיר
 document.getElementById("login-token-btn").addEventListener("click", () => {
     const t = document.getElementById("token-input").value.trim();
-    if (t) { token = t; localStorage.setItem("ym_token", token); verifyAndLoad(); }
+    if (t) { 
+        token = t; 
+        localStorage.setItem("ym_token", token); 
+        isTempMode = false;
+        localStorage.setItem("ym_is_temp", "false");
+        verifyAndLoad(); 
+    }
 });
 
-// כניסה עם קוד אישי (המערכת החדשה)
 document.getElementById("personal-code-input").addEventListener("keypress", (e) => {
     if (e.key === "Enter") document.getElementById("login-personal-code-btn").click();
 });
@@ -523,6 +535,8 @@ async function fetchTokenAndLogin(code, systemId) {
         }
         token = data.token;
         localStorage.setItem("ym_token", token);
+        isTempMode = false;
+        localStorage.setItem("ym_is_temp", "false");
         verifyAndLoad();
     } catch (e) {
         loader.classList.add("hidden");
@@ -530,7 +544,45 @@ async function fetchTokenAndLogin(code, systemId) {
     }
 }
 
-// עזרי עיצוב נתונים
+// לוגיקת קוד זמני
+const loginTempBtn = document.getElementById("login-temp-btn");
+if (loginTempBtn) {
+    loginTempBtn.addEventListener("click", async () => {
+        const tCode = document.getElementById("temp-code-chat-input").value.trim().toUpperCase();
+        if (!tCode) return (errorEl.textContent = "נא להזין קוד זמני.");
+        
+        errorEl.textContent = "";
+        loaderTextMain.textContent = "מאמת קוד זמני מול השרת...";
+        loader.classList.remove("hidden");
+        
+        token = tCode;
+        isTempMode = true;
+        localStorage.setItem("ym_token", token);
+        localStorage.setItem("ym_is_temp", "true");
+        
+        try {
+            const res = await apiFetch('GetIncomingSms', 'limit=1');
+            const data = await res.json();
+            
+            if (data.responseStatus === "OK" || data.responseStatus === "False") {
+                verifyAndLoad(); 
+            } else {
+                throw new Error("קוד שגוי");
+            }
+        } catch(e) {
+            loader.classList.add("hidden");
+            errorEl.textContent = "הקוד הזמני שגוי, מושבת או שפג תוקפו.";
+            logoutProcess();
+        }
+    });
+}
+const tempCodeChatInput = document.getElementById("temp-code-chat-input");
+if(tempCodeChatInput) {
+    tempCodeChatInput.addEventListener("keypress", (e) => {
+        if(e.key === "Enter") loginTempBtn.click();
+    });
+}
+
 function normalizePhone(phone) {
     if (!phone) return "לא ידוע";
     if (/[a-zA-Zא-ת]/.test(phone)) return phone;
@@ -539,6 +591,7 @@ function normalizePhone(phone) {
     if (cleaned.startsWith('972')) return '0' + cleaned.substring(3);
     return cleaned || phone;
 }
+
 function formatMessageDate(dateString) {
     const date = new Date(dateString);
     const today = new Date();
@@ -548,6 +601,7 @@ function formatMessageDate(dateString) {
     if (date.toDateString() === yesterday.toDateString()) return \`אתמול, \${timeStr}\`;
     return \`\${date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })}, \${timeStr}\`;
 }
+
 function getStatusIconHtml(status) {
     if (!status) return "";
     switch(status) {
