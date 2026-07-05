@@ -3,7 +3,12 @@ export default async function handleProxyApi(request, env) {
     if (!tempCode) return new Response(JSON.stringify({ error: 'חסר קוד זמני' }), { status: 401 });
 
     const url = new URL(request.url);
-    const endpoint = url.pathname.replace('/api/proxy/', '');
+    
+    // ניקוי הנתיב כדי לקבל רק את שם הפעולה (למשל GetIncomingSms)
+    let endpoint = url.pathname;
+    if (endpoint.startsWith('/sms/api/proxy/')) endpoint = endpoint.replace('/sms/api/proxy/', '');
+    else if (endpoint.startsWith('/api/proxy/')) endpoint = endpoint.replace('/api/proxy/', '');
+    
     if (!endpoint) return new Response(JSON.stringify({ error: 'נתיב לא תקין' }), { status: 400 });
 
     // משיכת הקוד ובדיקת תוקף
@@ -11,7 +16,7 @@ export default async function handleProxyApi(request, env) {
         SELECT t.id, t.expires_at, t.is_active, s.token as real_token 
         FROM temp_codes t
         JOIN system_tokens s ON t.system_id = s.id
-        WHERE t.temp_code = ?
+        WHERE UPPER(t.temp_code) = UPPER(?)
     `).bind(tempCode).first();
 
     if (!record || record.is_active !== 1) {
