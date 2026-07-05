@@ -63,6 +63,14 @@ export default `<!DOCTYPE html>
             </div>
             
             <div class="login-section">
+                <h4><span class="material-symbols-rounded" style="font-size:18px;">timer</span> כניסה בקוד זמני</h4>
+                <div class="input-group">
+                    <input type="text" id="temp-code-chat-input" placeholder="הכנס קוד זמני..." style="text-transform:uppercase; letter-spacing: 2px; font-weight: bold;" />
+                    <button id="login-temp-btn" class="btn-primary" style="background:#10b981;">התחבר באמצעות קוד זמני</button>
+                </div>
+            </div>
+
+            <div class="login-section">
                 <h4><span class="material-symbols-rounded" style="font-size:18px;">dialpad</span> כניסה בקוד אישי</h4>
                 <div class="input-group">
                     <input type="password" id="personal-code-input" placeholder="הכנס את הקוד שלך..." />
