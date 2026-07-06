@@ -3,7 +3,7 @@ export default `<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S.M.T - פורטל ניהול מתקדם</title>
+    <title>S.M.T - פורטל ניהול מערכות</title>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/sms/admin-style.css">
@@ -64,7 +64,7 @@ export default `<!DOCTYPE html>
                 <div id="reg-init-section">
                     <div class="input-wrapper"><span class="material-symbols-rounded input-icon">badge</span><input type="text" id="reg-name" class="login-input" placeholder="שם מלא / שם העסק" /></div>
                     <div class="input-wrapper"><span class="material-symbols-rounded input-icon">mail</span><input type="email" id="reg-email" class="login-input ltr-input" placeholder="כתובת אימייל" /></div>
-                    <div class="input-wrapper"><span class="material-symbols-rounded input-icon">call</span><input type="tel" id="reg-phone" class="login-input ltr-input" placeholder="מספר נייד (לדוגמה 0501234567)" /></div>
+                    <div class="input-wrapper"><span class="material-symbols-rounded input-icon">mark_email_read</span><input type="email" id="reg-email-confirm" class="login-input ltr-input" placeholder="אימות כתובת אימייל" /></div>
                     <div class="input-wrapper"><span class="material-symbols-rounded input-icon">dialpad</span><input type="password" id="reg-code" class="login-input" placeholder="בחר קוד סודי (6-15 ספרות)" /></div>
                     
                     <button class="btn-success btn-full" onclick="registerInit()" style="margin-top: 10px;">שלח קוד אימות למייל</button>
@@ -112,7 +112,7 @@ export default `<!DOCTYPE html>
     </div>
 
     <div class="modal-overlay" id="generic-modal">
-        <div class="modal modal-large">
+        <div class="modal">
             <div class="modal-header">
                 <h3 id="modal-title">כותרת מודאל</h3>
                 <button class="close-btn" onclick="closeModal()"><span class="material-symbols-rounded">close</span></button>
