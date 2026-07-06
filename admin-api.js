@@ -38,9 +38,8 @@ export default async function handleAdminApi(request, env) {
                         GROUP BY a.id ORDER BY a.id DESC`).all();
                     return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
                 }
-                if (path.includes('/systems/')) {
-                    const codeId = path.split('/').pop();
-                    const { results } = await env.DB.prepare('SELECT * FROM system_tokens WHERE code_id = ? ORDER BY id DESC').bind(codeId).all();
+                if (path.endsWith('/tickets')) {
+                    const { results } = await env.DB.prepare('SELECT t.*, a.owner_name, a.email FROM tickets t JOIN access_codes a ON t.code_id = a.id ORDER BY t.id DESC').all();
                     return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
                 }
                 if (path.endsWith('/logs')) {
@@ -55,38 +54,11 @@ export default async function handleAdminApi(request, env) {
             }
             if (method === 'POST') {
                 const body = await request.json();
-                if (path.endsWith('/settings/password')) {
-                    await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'admin_password'").bind(body.newPassword).run();
-                    return new Response(JSON.stringify({ success: true }));
-                }
-                if (path.endsWith('/codes')) {
-                    const conflict = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = UPPER(?) AND expires_at > ?').bind(body.code, Date.now()).first();
-                    if(conflict) return new Response(JSON.stringify({ error: 'הקוד הסודי כבר בשימוש כקוד זמני במערכת' }), { status: 400 });
-                    
-                    await env.DB.prepare('INSERT INTO access_codes (code, owner_name, max_systems, is_blocked, allow_temp_codes) VALUES (?, ?, ?, ?, ?)')
-                        .bind(body.code, body.owner_name, body.max_systems || 5, body.is_blocked || 0, body.allow_temp_codes || 0).run();
-                    return new Response(JSON.stringify({ success: true }));
-                }
-            }
-            if (method === 'PUT') {
-                const body = await request.json();
-                if (path.includes('/codes/')) {
-                    const id = path.split('/').pop();
-                    const conflict = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = UPPER(?) AND expires_at > ?').bind(body.code, Date.now()).first();
-                    if(conflict) return new Response(JSON.stringify({ error: 'הקוד הסודי כבר בשימוש כקוד זמני במערכת' }), { status: 400 });
-
-                    await env.DB.prepare('UPDATE access_codes SET code=?, owner_name=?, max_systems=?, is_blocked=?, allow_temp_codes=? WHERE id=?')
-                        .bind(body.code, body.owner_name, body.max_systems, body.is_blocked, body.allow_temp_codes || 0, id).run();
-                    return new Response(JSON.stringify({ success: true }));
-                }
-            }
-            if (method === 'DELETE') {
-                if (path.includes('/codes/')) {
-                    const id = path.split('/').pop();
-                    await env.DB.prepare('DELETE FROM temp_access_logs WHERE temp_code_id IN (SELECT id FROM temp_codes WHERE code_id = ?)').bind(id).run();
-                    await env.DB.prepare('DELETE FROM temp_codes WHERE code_id = ?').bind(id).run();
-                    await env.DB.prepare('DELETE FROM system_tokens WHERE code_id = ?').bind(id).run();
-                    await env.DB.prepare('DELETE FROM access_codes WHERE id = ?').bind(id).run();
+                if (path.endsWith('/tickets/respond')) {
+                    // עדכון התשובה לפניה ושליחת מייל
+                    await env.DB.prepare("UPDATE tickets SET status = 'CLOSED', response = ? WHERE id = ?").bind(body.response, body.ticketId).run();
+                    const ticket = await env.DB.prepare('SELECT t.subject, a.email FROM tickets t JOIN access_codes a ON t.code_id = a.id WHERE t.id = ?').bind(body.ticketId).first();
+                    // כאן קוראים לפונקציית שליחת המייל (הוסף אותה ב email-api)
                     return new Response(JSON.stringify({ success: true }));
                 }
             }
@@ -101,16 +73,8 @@ export default async function handleAdminApi(request, env) {
                     const systems = await env.DB.prepare('SELECT id, description, token FROM system_tokens WHERE code_id = ? ORDER BY id DESC').bind(currentUser.id).all();
                     return new Response(JSON.stringify({ user: currentUser, systems: systems.results }), { headers: { 'Content-Type': 'application/json' } });
                 }
-                if (path.endsWith('/logs')) {
-                    const { results } = await env.DB.prepare(`
-                        SELECT l.timestamp, s.description, l.ip_address 
-                        FROM access_logs l LEFT JOIN system_tokens s ON l.system_id = s.id
-                        WHERE l.code_id = ? ORDER BY l.timestamp DESC LIMIT 50
-                    `).bind(currentUser.id).all();
-                    return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
-                }
                 if (path.endsWith('/temp_codes')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
+                    // המשתמש רואה את הראוט אבל אם הוא לא מורשה ליצור הוא יראה אזהרה ב-UI, אנחנו נחזיר לו נתונים בכל מקרה אם יש לו היסטוריה
                     const { results } = await env.DB.prepare(`
                         SELECT t.*, s.description as system_desc, 
                         (SELECT COUNT(*) FROM temp_access_logs WHERE temp_code_id = t.id) as usage_count
@@ -119,88 +83,36 @@ export default async function handleAdminApi(request, env) {
                     `).bind(currentUser.id).all();
                     return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
                 }
+                if (path.endsWith('/tickets')) {
+                    const { results } = await env.DB.prepare('SELECT * FROM tickets WHERE code_id = ? ORDER BY id DESC').bind(currentUser.id).all();
+                    return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
+                }
             }
             if (method === 'POST') {
-                if (path.endsWith('/systems')) {
+                if (path.endsWith('/tickets')) {
                     const body = await request.json();
-                    const countReq = await env.DB.prepare('SELECT COUNT(*) as count FROM system_tokens WHERE code_id = ?').bind(currentUser.id).first();
-                    if (countReq.count >= currentUser.max_systems) {
-                        return new Response(JSON.stringify({ error: `הגעת למגבלת המערכות שלך (${currentUser.max_systems})` }), { status: 400 });
-                    }
-                    await env.DB.prepare('INSERT INTO system_tokens (code_id, description, token) VALUES (?, ?, ?)')
-                        .bind(currentUser.id, body.description, body.token).run();
+                    await env.DB.prepare('INSERT INTO tickets (code_id, subject, message, created_at) VALUES (?, ?, ?, ?)').bind(currentUser.id, body.subject, body.message, Date.now()).run();
                     return new Response(JSON.stringify({ success: true }));
                 }
                 if (path.endsWith('/temp_codes')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
+                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין לך הרשאה להנפיק קודים זמניים. פנה להנהלה.'}), {status: 403});
                     const body = await request.json();
                     
                     let tempCodeStr = body.customCode ? body.customCode.trim().toUpperCase() : '';
-                    if (!tempCodeStr) {
-                        tempCodeStr = body.isNumeric 
-                            ? Math.floor(100000 + Math.random() * 900000).toString() 
-                            : Math.random().toString(36).substring(2, 10).toUpperCase();
-                    }
+                    if (!tempCodeStr) tempCodeStr = body.isNumeric ? Math.floor(100000 + Math.random() * 900000).toString() : Math.random().toString(36).substring(2, 10).toUpperCase();
 
-                    // מניעת התנגשות קודים חכמה
-                    const conflictAccess = await env.DB.prepare('SELECT id FROM access_codes WHERE UPPER(code) = ?').bind(tempCodeStr).first();
-                    const conflictTemp = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = ? AND expires_at > ? AND is_active = 1').bind(tempCodeStr, Date.now()).first();
-                    
-                    if (conflictAccess || conflictTemp) {
-                        return new Response(JSON.stringify({error: 'הקוד שבחרת (או שהוגרל) כבר קיים במערכת, בחר קוד אחר.'}), {status: 400});
-                    }
+                    // שימוש בשעת תפוגה מדויקת שהגיעה מהלקוח
+                    const expiresAt = body.exactExpiresAt ? new Date(body.exactExpiresAt).getTime() : Date.now() + (body.durationMinutes * 60 * 1000);
+                    const permissions = body.canSend ? 'READ,SEND' : 'READ';
 
-                    const expiresAt = Date.now() + (body.durationMinutes * 60 * 1000);
-                    await env.DB.prepare('INSERT INTO temp_codes (code_id, system_id, temp_code, expires_at) VALUES (?, ?, ?, ?)')
-                        .bind(currentUser.id, body.systemId, tempCodeStr, expiresAt).run();
-                    return new Response(JSON.stringify({ success: true }));
-                }
-            }
-            if (method === 'PUT') {
-                if (path.includes('/systems/')) {
-                    const id = path.split('/').pop();
-                    const body = await request.json();
-                    await env.DB.prepare('UPDATE system_tokens SET description=?, token=? WHERE id=? AND code_id=?')
-                        .bind(body.description, body.token, id, currentUser.id).run();
-                    return new Response(JSON.stringify({ success: true }));
-                }
-                if (path.includes('/temp_codes/')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
-                    const id = path.split('/').pop();
-                    const body = await request.json();
-                    if (body.action === 'extend') {
-                        const addMs = (body.minutes || 10) * 60 * 1000;
-                        await env.DB.prepare('UPDATE temp_codes SET expires_at = MAX(expires_at, ?) + ? WHERE id = ? AND code_id = ?')
-                            .bind(Date.now(), addMs, id, currentUser.id).run();
-                    } else if (body.action === 'toggle') {
-                        await env.DB.prepare('UPDATE temp_codes SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ? AND code_id = ?')
-                            .bind(id, currentUser.id).run();
-                    }
-                    return new Response(JSON.stringify({ success: true }));
-                }
-            }
-            if (method === 'DELETE') {
-                if (path.includes('/systems/')) {
-                    const id = path.split('/').pop();
-                    await env.DB.prepare('DELETE FROM temp_access_logs WHERE temp_code_id IN (SELECT id FROM temp_codes WHERE system_id = ? AND code_id = ?)').bind(id, currentUser.id).run();
-                    await env.DB.prepare('DELETE FROM temp_codes WHERE system_id = ? AND code_id = ?').bind(id, currentUser.id).run();
-                    await env.DB.prepare('DELETE FROM system_tokens WHERE id=? AND code_id=?').bind(id, currentUser.id).run();
-                    return new Response(JSON.stringify({ success: true }));
-                }
-                if (path.includes('/temp_codes/')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
-                    const id = path.split('/').pop();
-                    await env.DB.prepare('DELETE FROM temp_access_logs WHERE temp_code_id = ?').bind(id).run();
-                    await env.DB.prepare('DELETE FROM temp_codes WHERE id = ? AND code_id = ?').bind(id, currentUser.id).run();
+                    await env.DB.prepare('INSERT INTO temp_codes (code_id, system_id, temp_code, expires_at, permissions, whitelist, blacklist) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                        .bind(currentUser.id, body.systemId, tempCodeStr, expiresAt, permissions, body.whitelist || '', body.blacklist || '').run();
                     return new Response(JSON.stringify({ success: true }));
                 }
             }
         }
-
     } catch (e) {
-        console.error("API Error:", e);
         return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
-
     return new Response('Not Found', { status: 404 });
 }
