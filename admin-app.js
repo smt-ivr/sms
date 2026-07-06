@@ -262,7 +262,6 @@ async function loadAdminView(view) {
             container.innerHTML = `<div class="card" style="max-width:500px"><div class="card-header"><h3>שינוי סיסמת מנהל עליון</h3></div><div style="padding:30px;"><div class="form-group"><label>סיסמה חדשה</label><input type="password" id="new-admin-pass" class="form-control" /></div><button class="btn-primary btn-full" onclick="changeAdminPass()">עדכן סיסמה</button></div></div>`;
         }
     } catch (e) {
-        // במידה ויש שגיאת רנדור זה לפחות יסתיר את הלואדר ויציג שגיאה
         console.error(e);
         showToast("אירעה שגיאה בטעינת הנתונים", "error");
     } finally {
@@ -325,9 +324,9 @@ async function loadUserView(view) {
                             const isExpired = Date.now() > c.expires_at;
                             const timeStr = new Date(c.expires_at).toLocaleString('he-IL');
                             
-                            // תיקון קריטי: הגנה מקריסה אם permissions או whitelist מחזירים ריק/null עבור קודים ישנים
-                            const permissionsString = c.permissions || '';
-                            const canSend = permissionsString.includes('SEND') || permissionsString === ''; // ברירת מחדל לאפשר אם השדה ריק
+                            // הגנה קשיחה למניעת קריסה מקודים ישנים שאין להם את העמודות החדשות
+                            const permissionsString = (c.permissions != null) ? String(c.permissions) : '';
+                            const canSend = permissionsString.includes('SEND') || permissionsString === '';
                             const restrictInfo = ((c.whitelist || '') ? 'לבנה ' : '') + ((c.blacklist || '') ? 'שחורה' : '');
                             
                             return `<tr>
