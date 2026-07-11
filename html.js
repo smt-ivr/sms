@@ -50,45 +50,50 @@ export default `<!DOCTYPE html>
     </div>
 
     <div id="login-screen" class="screen">
-        <div class="login-box" style="padding-top:20px;">
+        <div class="login-box">
             
             <a href="/sms/manage-tokens" class="admin-link">
                 <span class="material-symbols-rounded" style="font-size: 18px;">admin_panel_settings</span> לניהול
             </a>
 
-            <div class="login-header" style="margin-bottom: 20px;">
-                <span class="material-symbols-rounded" style="font-size:42px; color:var(--primary);">chat</span>
-                <h2>התחברות למערכת</h2>
+            <div class="login-header">
+                <div class="login-logo-circle">
+                    <span class="material-symbols-rounded">chat_bubble</span>
+                </div>
+                <h2>ברוכים הבאים</h2>
+                <p>התחברות לפורטל ההודעות</p>
             </div>
             
-            <div id="login-error" class="hidden" style="background:#fee2e2; color:#ef4444; padding:12px; border-radius:8px; border:1px solid #fca5a5; margin-bottom:15px; display:flex; align-items:center; justify-content:center; gap:8px;">
+            <div id="login-error" class="hidden" style="background:#fee2e2; color:#ef4444; padding:12px; border-radius:10px; border:1px solid #fca5a5; margin-bottom:20px; display:flex; align-items:center; justify-content:center; gap:8px;">
                 <span class="material-symbols-rounded">error</span>
                 <span id="login-error-text" style="font-weight:bold; font-size:14px;"></span>
             </div>
 
-            <div class="login-section" style="border: 2px solid var(--primary); background: rgba(37, 99, 235, 0.03);">
-                <h4 style="color:var(--primary); font-size:16px; margin-bottom:10px;"><span class="material-symbols-rounded" style="font-size:18px;">vpn_key</span> כניסה מהירה (קוד)</h4>
-                <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:12px; line-height:1.4;">הזן את הקוד האישי הקבוע או הקוד הזמני שלך. המערכת תזהה את סוג הקוד באופן אוטומטי.</p>
+            <div class="login-section primary-login">
+                <h4><span class="material-symbols-rounded">vpn_key</span> כניסה מהירה (קוד)</h4>
+                <p>הזן את הקוד האישי הקבוע או הזמני שלך.</p>
                 <div class="input-group">
-                    <input type="text" id="personal-code-input" placeholder="הכנס קוד התחברות..." style="font-size:16px; text-align:center; letter-spacing:1px; font-weight:bold; text-transform:uppercase;" />
-                    <button id="login-personal-code-btn" class="btn-primary" style="font-size:15px; padding:10px;">התחברות</button>
+                    <input type="password" id="personal-code-input" placeholder="הכנס קוד התחברות..." />
+                    <button id="login-personal-code-btn" class="btn-primary">התחברות מאובטחת</button>
                 </div>
             </div>
 
-            <div class="login-section">
-                <h4 style="font-size:14px; margin-bottom:10px;"><span class="material-symbols-rounded" style="font-size:16px;">account_circle</span> כניסה עם מערכת וסיסמה</h4>
+            <div class="divider-text">אפשרויות מתקדמות</div>
+
+            <div class="login-section secondary-login">
+                <h4><span class="material-symbols-rounded">account_circle</span> כניסה עם מערכת וסיסמה</h4>
                 <div class="input-group">
-                    <input type="text" id="username" placeholder="מספר מערכת (לדוגמה: 077...)" style="font-size:14px;" />
-                    <input type="password" id="password" placeholder="סיסמה" style="font-size:14px;" />
-                    <button id="login-user-btn" class="btn-secondary" style="font-size:14px; background:var(--text-main); color:white;">התחבר</button>
+                    <input type="text" id="username" placeholder="מספר מערכת (לדוגמה: 077...)" />
+                    <input type="password" id="password" placeholder="סיסמה" />
+                    <button id="login-user-btn" class="btn-secondary">התחבר</button>
                 </div>
             </div>
 
-            <div class="login-section" style="margin-bottom: 0;">
-                <h4 style="font-size:14px; margin-bottom:10px;"><span class="material-symbols-rounded" style="font-size:16px;">code</span> כניסה עם Token</h4>
+            <div class="login-section secondary-login" style="margin-bottom: 0;">
+                <h4><span class="material-symbols-rounded">code</span> כניסה עם Token</h4>
                 <div class="input-group">
-                    <input type="text" id="token-input" placeholder="הדבק Token ישירות כאן..." style="font-size:14px;" />
-                    <button id="login-token-btn" class="btn-secondary" style="font-size:14px;">התחבר</button>
+                    <input type="password" id="token-input" placeholder="הדבק Token ישירות כאן..." />
+                    <button id="login-token-btn" class="btn-secondary">התחבר</button>
                 </div>
             </div>
 
