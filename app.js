@@ -33,7 +33,6 @@ let modalCallback = null;
 // פונקציית fetch מאוחדת התומכת בפרוקסי
 async function apiFetch(endpoint, paramsStr) {
     if (isTempMode) {
-        // התיקון המרכזי לניתוב ה-Proxy מתוך תת-תיקייה
         const res = await fetch(\`/sms/api/proxy/\${endpoint}?\${paramsStr}\`, { headers: { 'x-temp-code': token } });
         if (!res.ok) throw new Error(await res.text());
         return res;
@@ -278,7 +277,7 @@ function processMessages(inboxRows, outboxRows) {
         addMessageToConversation(contact, { text: row.Message, time: row.Time, isOut: true, status: row.DeliveryReport });
     });
     for (let contact in conversations) {
-        conversations[contact].sort((a, b) => new Date(a.time) - new Date(b.time));
+        conversations[contact].sort((a, b) => new Date(a.time.replace(" ", "T")) - new Date(b.time.replace(" ", "T")));
     }
     renderContacts();
     if (activeContact && conversations[activeContact]) {
@@ -298,7 +297,7 @@ function renderContacts() {
     const sortedContacts = Object.keys(conversations).map(contact => {
         const msgs = conversations[contact];
         return { contact, lastMsg: msgs[msgs.length - 1] };
-    }).sort((a, b) => new Date(b.lastMsg.time) - new Date(a.lastMsg.time));
+    }).sort((a, b) => new Date(b.lastMsg.time.replace(" ", "T")) - new Date(a.lastMsg.time.replace(" ", "T")));
 
     sortedContacts.forEach(item => {
         const div = document.createElement("div");
@@ -335,7 +334,7 @@ function renderChat(contact, preserveScroll = false) {
 
     let newHTML = "";
     msgs.forEach(msg => {
-        const timeStr = new Date(msg.time).toLocaleTimeString('he-IL', {hour: '2-digit', minute:'2-digit'});
+        const timeStr = formatMessageDate(msg.time);
         const statusIcon = msg.isOut ? getStatusIconHtml(msg.status) : "";
         let safeText = msg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         const urlRegex = /(https?:\\/\\/[^\\s]+)/g;
@@ -344,7 +343,7 @@ function renderChat(contact, preserveScroll = false) {
         });
         safeText = safeText.replace(/\\n/g, "<br>");
         newHTML += \`<div class="message \${msg.isOut ? 'msg-out' : 'msg-in'}">
-            <div>\${safeText}</div><div class="msg-footer"><span class="msg-time">\${timeStr}</span> \${statusIcon}</div>
+            <div>\${safeText}</div><div class="msg-footer"><span class="msg-time" style="direction:ltr; display:inline-block;">\${timeStr}</span> \${statusIcon}</div>
         </div>\`;
     });
     
@@ -436,7 +435,6 @@ document.getElementById("login-token-btn").addEventListener("click", () => {
     }
 });
 
-// המנגנון החכם: מאחד זיהוי קבוע וקוד זמני
 document.getElementById("login-personal-code-btn").addEventListener("click", async () => {
     const code = document.getElementById("personal-code-input").value.trim();
     if (!code) return showError("נא להזין קוד התחברות.");
@@ -446,7 +444,6 @@ document.getElementById("login-personal-code-btn").addEventListener("click", asy
     loader.classList.remove("hidden");
 
     try {
-        // שלב 1: בדיקה אם זהו קוד אישי קבוע
         const res = await fetch('/sms/api/auth/systems', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code })
         });
@@ -457,11 +454,10 @@ document.getElementById("login-personal-code-btn").addEventListener("click", asy
                 loader.classList.add("hidden");
                 if (data.systems.length === 1) fetchTokenAndLogin(code, data.systems[0].id);
                 else showSystemSelector(code, data.systems);
-                return; // הקוד זוהה כקבוע בהצלחה
+                return;
             }
         }
 
-        // שלב 2: אם זה לא קוד קבוע (או אין לו מערכות), נבדוק מול שרת ה-Proxy אם זה קוד זמני בתוקף
         const tempRes = await fetch(\`/sms/api/proxy/GetIncomingSms?limit=1\`, { 
             headers: { 'x-temp-code': code } 
         });
@@ -474,11 +470,10 @@ document.getElementById("login-personal-code-btn").addEventListener("click", asy
                 localStorage.setItem("ym_token", token);
                 localStorage.setItem("ym_is_temp", "true");
                 verifyAndLoad(); 
-                return; // הקוד זוהה כזמני בהצלחה
+                return; 
             }
         }
 
-        // אם גם קבוע וגם זמני נכשלו:
         loader.classList.add("hidden");
         showError("הקוד שהוזן שגוי, מושבת או שפג תוקפו.");
 
@@ -539,15 +534,46 @@ function normalizePhone(phone) {
     if (cleaned.startsWith('972')) return '0' + cleaned.substring(3);
     return cleaned || phone;
 }
+
+// פונקציית התאריכים החכמה והמדויקת
 function formatMessageDate(dateString) {
-    const date = new Date(dateString);
+    if (!dateString) return "";
+    
+    // מניעת שגיאות בדפדפנים כמו ספארי (החלפת רווח ב-T)
+    const safeDateStr = dateString.includes("T") ? dateString : dateString.replace(" ", "T");
+    const date = new Date(safeDateStr);
+    if (isNaN(date.getTime())) return dateString; // למקרה שמבנה התאריך שגוי
+
     const today = new Date();
-    const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
-    const timeStr = date.toLocaleString('he-IL', { hour: '2-digit', minute: '2-digit' });
-    if (date.toDateString() === today.toDateString()) return \`היום, \${timeStr}\`;
-    if (date.toDateString() === yesterday.toDateString()) return \`אתמול, \${timeStr}\`;
-    return \`\${date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })}, \${timeStr}\`;
+    today.setHours(0,0,0,0);
+    const targetDate = new Date(date);
+    targetDate.setHours(0,0,0,0);
+    
+    // חישוב ימים שעברו במדויק
+    const diffTime = today.getTime() - targetDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    
+    const timeStr = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const fullDateStr = date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    
+    let relativeStr = "";
+    if (diffDays === 0) relativeStr = "היום";
+    else if (diffDays === 1) relativeStr = "אתמול";
+    else if (diffDays === 2) relativeStr = "שלשום";
+    else if (diffDays < 7) relativeStr = \`לפני \${diffDays} ימים\`;
+    else if (diffDays === 7) relativeStr = "לפני שבוע";
+    else if (diffDays > 7 && diffDays < 14) relativeStr = \`לפני שבוע ו-\${diffDays - 7} ימים\`;
+    else if (diffDays >= 14 && diffDays < 21) relativeStr = "לפני שבועיים";
+    else if (diffDays >= 21 && diffDays < 30) relativeStr = \`לפני \${Math.floor(diffDays / 7)} שבועות\`;
+    else if (diffDays >= 30 && diffDays < 60) relativeStr = "לפני חודש";
+    else if (diffDays >= 60 && diffDays < 90) relativeStr = "לפני חודשיים";
+    else if (diffDays >= 90 && diffDays < 365) relativeStr = \`לפני \${Math.floor(diffDays / 30)} חודשים\`;
+    else if (diffDays >= 365 && diffDays < 730) relativeStr = "לפני שנה";
+    else relativeStr = \`לפני \${Math.floor(diffDays / 365)} שנים\`;
+
+    return \`\${relativeStr}, \${fullDateStr} | \${timeStr}\`;
 }
+
 function getStatusIconHtml(status) {
     if (!status) return "";
     switch(status) {
