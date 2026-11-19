@@ -23,6 +23,7 @@ export const ERRORS = {
     ACTION_NOT_ALLOWED:   { status: 403, message: 'פעולה זו אינה זמינה דרך קוד זמני' },
     PERMISSION_DENIED:    { status: 403, message: 'אין לקוד זה הרשאה לפעולה המבוקשת' },
     PHONE_NOT_ALLOWED:    { status: 403, message: 'הקוד אינו מורשה למספר זה' },
+    IP_NOT_ALLOWED:       { status: 403, message: 'הקוד אינו מורשה לשימוש מכתובת IP זו' },
 
     // --- מול ימות המשיח ---
     UPSTREAM_REJECTED:    { status: 502, message: 'ימות המשיח דחו את הבקשה' },
@@ -64,4 +65,68 @@ export function normalizePhone(phone) {
     let cleaned = String(phone).replace(/[^\d]/g, '');
     if (cleaned.startsWith('972')) cleaned = '0' + cleaned.substring(3);
     return cleaned;
+}
+
+// ==========================================
+//  תוקף
+// ==========================================
+// "לצמיתות" נשמר כתאריך רחוק (שנת 9999) - כך כל השוואות התוקף הקיימות ממשיכות לעבוד
+export const PERMANENT_EXPIRY = 253402300799000;
+export const isPermanent = (expiresAt) => Number(expiresAt) >= PERMANENT_EXPIRY;
+
+// ==========================================
+//  הגבלת IP (כתובת בודדת או טווח CIDR, IPv4 ו-IPv6)
+// ==========================================
+function ipToBig(ip) {
+    ip = String(ip || '').trim();
+    const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+    if (mapped) ip = mapped[1];
+
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+        const parts = ip.split('.').map(Number);
+        if (parts.some((p) => p > 255)) return null;
+        return { v: 4, n: parts.reduce((acc, p) => (acc << 8n) + BigInt(p), 0n) };
+    }
+
+    if (!ip.includes(':') || !/^[0-9a-f:]+$/i.test(ip)) return null;
+    const halves = ip.split('::');
+    if (halves.length > 2) return null;
+    const head = halves[0] ? halves[0].split(':') : [];
+    const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+    const missing = 8 - head.length - tail.length;
+    if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
+    const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill('0'), ...tail];
+    if (groups.some((g) => !/^[0-9a-f]{1,4}$/i.test(g))) return null;
+    return { v: 6, n: groups.reduce((acc, g) => (acc << 16n) + BigInt(parseInt(g, 16)), 0n) };
+}
+
+// "1.2.3.4" / "1.2.3.0/24" / "2001:db8::/32" -> אובייקט כלל, או null אם לא תקין
+export function parseIpRule(rule) {
+    const parts = String(rule || '').trim().split('/');
+    if (parts.length > 2) return null;
+    const ip = ipToBig(parts[0]);
+    if (!ip) return null;
+    const bits = ip.v === 4 ? 32 : 128;
+    if (parts.length === 2 && !/^\d{1,3}$/.test(parts[1])) return null;
+    const prefix = parts.length === 2 ? Number(parts[1]) : bits;
+    if (prefix < 0 || prefix > bits) return null;
+    return { ...ip, prefix, bits };
+}
+
+export function splitList(str) {
+    return String(str || '').split(/[,;\s\n]+/).map((s) => s.trim()).filter(Boolean);
+}
+
+// רשימה ריקה = הכל מותר
+export function ipAllowed(ip, rulesStr) {
+    const rules = splitList(rulesStr);
+    if (rules.length === 0) return true;
+    const addr = ipToBig(ip);
+    if (!addr) return false;
+    return rules.some((r) => {
+        const rule = parseIpRule(r);
+        if (!rule || rule.v !== addr.v) return false;
+        const shift = BigInt(rule.bits - rule.prefix);
+        return (addr.n >> shift) === (rule.n >> shift);
+    });
 }

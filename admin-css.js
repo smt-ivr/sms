@@ -109,6 +109,9 @@ body { background: var(--bg-main); color: var(--text-main); display: flex; heigh
 .stat-info div:last-child { font-size: 28px; font-weight: 800; color: var(--secondary); }
 
 table { width: 100%; border-collapse: collapse; }
+.table-scroll { overflow-x: auto; }
+.compact-table th, .compact-table td { padding: 14px 16px; }
+.compact-table td:last-child { white-space: nowrap; }
 th, td { padding: 18px 30px; text-align: right; border-bottom: 1px solid var(--border); }
 th { color: var(--text-muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; background: #f8fafc; }
 tr:last-child td { border-bottom: none; }
@@ -122,13 +125,13 @@ td { font-weight: 500; font-size: 15px; }
 /* Modals */
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; justify-content: center; align-items: center; z-index: 6000; opacity: 0; visibility: hidden; transition: 0.3s; backdrop-filter: blur(4px);}
 .modal-overlay.show { opacity: 1; visibility: visible; }
-.modal { background: var(--card-bg); border-radius: 20px; width: 100%; max-width: 500px; transform: scale(0.95) translateY(20px); transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); box-shadow: var(--shadow-lg); overflow: hidden; }
+.modal { background: var(--card-bg); border-radius: 20px; width: 100%; max-width: 500px; transform: scale(0.95) translateY(20px); transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); box-shadow: var(--shadow-lg); overflow: hidden; max-height: calc(100vh - 32px); display: flex; flex-direction: column; margin: 0 16px; }
 .modal-overlay.show .modal { transform: scale(1) translateY(0); }
 .modal-header { padding: 25px 30px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
 .modal-header h3 { margin: 0; font-size: 20px; font-weight: 800; color: var(--secondary); }
 .close-btn { background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; transition: 0.2s; }
 .close-btn:hover { color: var(--danger); transform: rotate(90deg); }
-.modal-body { padding: 30px; }
+.modal-body { padding: 30px; overflow-y: auto; flex: 1; min-height: 0; }
 .form-group { margin-bottom: 20px; }
 .form-group label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: var(--text-main); }
 .form-control { width: 100%; padding: 12px 15px; border: 2px solid var(--border); border-radius: 10px; font-size: 15px; font-family: inherit; transition: 0.3s; }

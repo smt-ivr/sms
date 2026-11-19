@@ -341,7 +341,8 @@ async function loadUserView(view) {
     if(view === 'temp_codes') {
         setTopbar('ניהול קודים זמניים', 'timer');
         const codes = await apiCall('/api/user/temp_codes');
-        const { systems } = await apiCall('/api/user/data');
+        const { systems, client_ip } = await apiCall('/api/user/data');
+        myIp = client_ip || '';
         
         container.innerHTML = \`
             <div class="card">
@@ -349,11 +350,17 @@ async function loadUserView(view) {
                     <h3>קודים פעילים</h3>
                     <button class="btn-primary" onclick="openTempCodeModal('\${encodeURIComponent(JSON.stringify(systems))}')"><span class="material-symbols-rounded">add</span> הנפק קוד</button>
                 </div>
-                <table>
-                    <tr><th>קוד זמני</th><th>תיאור</th><th>מערכת מקושרת</th><th>מספרים מורשים</th><th>הרשאות</th><th>תפוגה</th><th>שימושים</th><th>סטטוס</th><th>פעולות</th></tr>
+                <div class="table-scroll"><table class="compact-table">
+                    <tr><th>קוד זמני</th><th>תיאור</th><th>מערכת מקושרת</th><th>מספרים מורשים</th><th>הגבלת IP</th><th>הרשאות</th><th>תוקף</th><th>שימושים</th><th>סטטוס</th><th>פעולות</th></tr>
                     \${codes.map(c => {
                         const isExpired = Date.now() > c.expires_at;
-                        const timeStr = new Date(c.expires_at).toLocaleString('he-IL', {timeZone: 'Asia/Jerusalem'});
+                        const timeStr = fmtExpiry(c.expires_at);
+                        const ips = (c.allowed_ips || '').split(',').filter(Boolean);
+                        const ipCell = ips.length
+                            ? ips.join('<br>')
+                            : (c.lock_first_ip
+                                ? '<span class="badge" style="background:#fef3c7; color:#92400e">יינעל בכניסה הראשונה</span>'
+                                : '<span class="badge" style="background:#f1f5f9; color:#334155">מכל מקום</span>');
                         const phones = (c.allowed_phones || '').split(',').filter(Boolean);
                         const perms = [
                             c.allow_incoming ? 'נכנסות' : null,
@@ -366,19 +373,20 @@ async function loadUserView(view) {
                             <td>\${escapeHtml(c.label || '')}</td>
                             <td>\${escapeHtml(c.system_desc)}</td>
                             <td style="direction:ltr; font-family:monospace;">\${phones.length ? phones.join('<br>') : '<span class="badge" style="background:#f1f5f9; color:#334155">כל המספרים</span>'}</td>
+                            <td style="direction:ltr; font-family:monospace;">\${ipCell}</td>
                             <td>\${perms.map(p => \`<span class="badge \${p === 'שליחה' ? 'red' : 'green'}" style="margin:2px">\${p}</span>\`).join('')}</td>
                             <td style="direction:ltr">\${timeStr}</td>
                             <td>\${c.usage_count}</td>
                             <td><span class="badge \${c.is_active && !isExpired ? 'green' : 'red'}">\${c.is_active ? (isExpired ? 'פג תוקף' : 'פעיל') : 'מושבת'}</span></td>
                             <td>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempScopeModal(\${c.id})">הרשאות</button>
-                                <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageTempCode(\${c.id}, 'extend')">הארך ב-10 דק'</button>
+                                <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempExpiryModal(\${c.id})">תוקף</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageTempCode(\${c.id}, 'toggle')">\${c.is_active ? 'השבת' : 'הפעל'}</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px; border-color:var(--danger); color:var(--danger);" onclick="manageTempCode(\${c.id}, 'delete')">מחק</button>
                             </td>
                         </tr>\`;
                     }).join('')}
-                </table>
+                </table></div>
             </div>\`;
     }
 
@@ -423,8 +431,7 @@ window.openTempCodeModal = function(systemsJson) {
         <div class="form-group"><label>בחר מערכת</label>
         <select id="t-system" class="form-control">\${systems.map(s => \`<option value="\${s.id}">\${s.description}</option>\`).join('')}</select></div>
         
-        <div class="form-group"><label>זמן פעילות (בדקות)</label>
-        <input type="number" id="t-mins" class="form-control" value="10"></div>
+        \${expiryFields()}
         
         <div class="form-group"><label>קוד מותאם אישית (אופציונלי)</label>
         <input type="text" id="t-custom" class="form-control" placeholder="השאר ריק להגרלה אוטומטית"></div>
@@ -438,7 +445,7 @@ window.openTempCodeModal = function(systemsJson) {
     document.getElementById('modal-save-btn').onclick = async () => {
         const body = {
             systemId: document.getElementById('t-system').value,
-            durationMinutes: parseInt(document.getElementById('t-mins').value),
+            expiry: readExpiryFields(),
             customCode: document.getElementById('t-custom').value,
             isNumeric: document.getElementById('t-numeric').checked,
             ...readTempScopeFields()
@@ -453,6 +460,85 @@ window.openTempCodeModal = function(systemsJson) {
 };
 
 const tempCodesCache = {};
+let myIp = '';
+const PERMANENT_EXPIRY = 253402300799000;
+
+function fmtExpiry(ms) {
+    if (ms >= PERMANENT_EXPIRY) return 'לצמיתות';
+    return new Date(ms).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+// ---------- בחירת תוקף ----------
+function expiryFields(defaultValue = '1440') {
+    const presets = [
+        ['10', '10 דקות'], ['60', 'שעה'], ['360', '6 שעות'], ['1440', 'יום'], ['10080', 'שבוע'],
+        ['43200', '30 יום'], ['525600', 'שנה'],
+        ['custom', 'משך מותאם אישית...'], ['until', 'עד תאריך ושעה...'], ['permanent', 'לצמיתות (ללא תפוגה)']
+    ];
+    const pad = n => String(n).padStart(2, '0');
+    const d = new Date(Date.now() + 7 * 864e5);
+    const defDate = \`\${d.getFullYear()}-\${pad(d.getMonth() + 1)}-\${pad(d.getDate())}T\${pad(d.getHours())}:\${pad(d.getMinutes())}\`;
+    return \`
+        <div class="form-group"><label>תוקף</label>
+        <select id="t-exp-mode" class="form-control" onchange="onExpiryModeChange()">
+            \${presets.map(([v, t]) => \`<option value="\${v}" \${v === defaultValue ? 'selected' : ''}>\${t}</option>\`).join('')}
+        </select></div>
+        <div id="t-exp-custom" class="form-group" style="display:none;"><label>משך</label>
+            <div style="display:flex; gap:8px;">
+                <input type="number" id="t-exp-amount" class="form-control" value="2" min="1" style="flex:1">
+                <select id="t-exp-unit" class="form-control" style="flex:1">
+                    <option value="1">דקות</option><option value="60">שעות</option>
+                    <option value="1440" selected>ימים</option><option value="10080">שבועות</option><option value="43200">חודשים</option>
+                </select>
+            </div>
+        </div>
+        <div id="t-exp-until" class="form-group" style="display:none;"><label>תאריך ושעת תפוגה</label>
+            <input type="datetime-local" id="t-exp-date" class="form-control" value="\${defDate}">
+        </div>\`;
+}
+
+window.onExpiryModeChange = function() {
+    const mode = document.getElementById('t-exp-mode').value;
+    document.getElementById('t-exp-custom').style.display = mode === 'custom' ? 'block' : 'none';
+    document.getElementById('t-exp-until').style.display = mode === 'until' ? 'block' : 'none';
+};
+
+function readExpiryFields() {
+    const mode = document.getElementById('t-exp-mode').value;
+    if (mode === 'permanent') return { mode: 'permanent' };
+    if (mode === 'until') return { mode: 'until', until: new Date(document.getElementById('t-exp-date').value).getTime() };
+    if (mode === 'custom') {
+        const amount = parseInt(document.getElementById('t-exp-amount').value, 10);
+        const unit = parseInt(document.getElementById('t-exp-unit').value, 10);
+        return { mode: 'minutes', minutes: amount * unit };
+    }
+    return { mode: 'minutes', minutes: parseInt(mode, 10) };
+}
+
+window.openTempExpiryModal = function(id) {
+    const c = tempCodesCache[id];
+    if (!c) return;
+    document.getElementById('modal-title').textContent = 'תוקף לקוד ' + c.temp_code;
+    document.getElementById('modal-body').innerHTML = \`
+        <p style="margin:0 0 16px; color:var(--text-muted)">תוקף נוכחי: <b>\${fmtExpiry(c.expires_at)}</b></p>
+        <p style="margin:0 0 16px; font-size:13px; color:var(--text-muted)">משך הזמן נספר מעכשיו.</p>
+        \${expiryFields('1440')}\`;
+    document.getElementById('modal-save-btn').onclick = async () => {
+        showLoader();
+        try {
+            await apiCall(\`/api/user/temp_codes/\${id}\`, 'PUT', { action: 'expiry', expiry: readExpiryFields() });
+            closeModal(); showToast('התוקף עודכן'); loadUserView('temp_codes');
+        } catch(e) { showLoader(false); }
+    };
+    document.getElementById('generic-modal').classList.add('show');
+};
+
+window.addMyIp = function() {
+    const ta = document.getElementById('t-ips');
+    const list = ta.value.split(/[,;\\s]+/).filter(Boolean);
+    if (myIp && !list.includes(myIp)) list.push(myIp);
+    ta.value = list.join('\\n');
+};
 
 function escapeHtml(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -461,6 +547,7 @@ function escapeHtml(s) {
 // שדות ההרשאה של קוד זמני (משותף להנפקה ולעריכה)
 function tempScopeFields(c) {
     const phones = (c.allowed_phones || '').split(',').filter(Boolean).join('\\n');
+    const ips = (c.allowed_ips || '').split(',').filter(Boolean).join('\\n');
     const cb = (id, checked, text, color) => \`
         <div class="form-group" style="display:flex; align-items:center; gap:10px; margin:6px 0;">
             <input type="checkbox" id="\${id}" \${checked ? 'checked' : ''} style="width:18px; height:18px;">
@@ -478,6 +565,13 @@ function tempScopeFields(c) {
         \${cb('t-allow-in', c.allow_incoming, 'צפייה בהודעות נכנסות')}
         \${cb('t-allow-out', c.allow_outgoing, 'צפייה בהודעות יוצאות')}
         \${cb('t-allow-send', c.allow_send, 'שליחת הודעות (רק למספרים המורשים, אם הוגבלו)', 'var(--danger)')}
+
+        <hr style="border:none; border-top:1px solid #e2e8f0; margin:20px 0;">
+        <div class="form-group"><label>הגבלת IP (כתובת או טווח CIDR בכל שורה, ריק = מכל מקום)</label>
+        <textarea id="t-ips" class="form-control" rows="3" style="direction:ltr; font-family:monospace;" placeholder="1.2.3.4&#10;10.0.0.0/24">\${ips}</textarea>
+        \${myIp ? \`<button type="button" class="btn-outline" style="padding:4px 10px; border-radius:8px; margin-top:6px; font-size:13px;" onclick="addMyIp()">הוסף את ה-IP שלי (\${myIp})</button>\` : ''}
+        </div>
+        \${cb('t-lock-ip', c.lock_first_ip, 'נעל אוטומטית לכתובת ה-IP של הכניסה הראשונה (כשהרשימה ריקה)')}
     \`;
 }
 
@@ -487,7 +581,9 @@ function readTempScopeFields() {
         allowedPhones: document.getElementById('t-phones').value,
         allowIncoming: document.getElementById('t-allow-in').checked,
         allowOutgoing: document.getElementById('t-allow-out').checked,
-        allowSend: document.getElementById('t-allow-send').checked
+        allowSend: document.getElementById('t-allow-send').checked,
+        allowedIps: document.getElementById('t-ips').value,
+        lockFirstIp: document.getElementById('t-lock-ip').checked
     };
 }
 

@@ -1,4 +1,4 @@
-import { json, fail, normalizePhone } from './http.js';
+import { json, fail, normalizePhone, PERMANENT_EXPIRY, parseIpRule, splitList } from './http.js';
 import { ensureSchema } from './schema.js';
 
 // קריאת הגדרות ההרשאה של קוד זמני מגוף הבקשה
@@ -14,8 +14,17 @@ function parseTempScope(body) {
     }
     if (phones.length > 50) return { error: fail('BAD_REQUEST', 'ניתן להגביל עד 50 מספרים לקוד', { field: 'allowedPhones' }) };
 
+    const ips = [];
+    for (const rule of splitList(body.allowedIps)) {
+        if (!parseIpRule(rule)) return { error: fail('BAD_REQUEST', `כתובת IP לא תקינה: ${rule}`, { field: 'allowedIps' }) };
+        if (!ips.includes(rule)) ips.push(rule);
+    }
+    if (ips.length > 20) return { error: fail('BAD_REQUEST', 'ניתן להגדיר עד 20 כתובות IP לקוד', { field: 'allowedIps' }) };
+
     const flag = (v, def) => (v === undefined ? def : (v ? 1 : 0));
     const scope = {
+        ips: ips.join(','),
+        lock_first_ip: flag(body.lockFirstIp, 0),
         phones: phones.join(','),
         allow_incoming: flag(body.allowIncoming, 1),
         allow_outgoing: flag(body.allowOutgoing, 1),
@@ -26,6 +35,26 @@ function parseTempScope(body) {
         return { error: fail('BAD_REQUEST', 'יש לבחור לפחות הרשאה אחת', { field: 'permissions' }) };
     }
     return scope;
+}
+
+// קריאת התוקף המבוקש:
+//   { mode: 'minutes', minutes: 60 } | { mode: 'until', until: <ms> } | { mode: 'permanent' }
+// (תאימות לאחור: durationMinutes)
+const MAX_MINUTES = 60 * 24 * 365 * 10;
+function parseExpiry(body) {
+    const e = body.expiry || { mode: 'minutes', minutes: body.durationMinutes };
+    if (e.mode === 'permanent') return { expiresAt: PERMANENT_EXPIRY };
+    if (e.mode === 'until') {
+        const t = Math.floor(Number(e.until));
+        if (!Number.isFinite(t) || t <= Date.now()) return { error: fail('BAD_REQUEST', 'תאריך התפוגה חייב להיות בעתיד', { field: 'expiry' }) };
+        return { expiresAt: Math.min(t, PERMANENT_EXPIRY) };
+    }
+    if (e.mode === 'minutes' || e.mode === undefined) {
+        const m = parseInt(e.minutes, 10);
+        if (!Number.isFinite(m) || m < 1 || m > MAX_MINUTES) return { error: fail('BAD_REQUEST', 'משך הזמן חייב להיות בין דקה אחת ל-10 שנים', { field: 'expiry' }) };
+        return { expiresAt: Date.now() + m * 60 * 1000 };
+    }
+    return { error: fail('BAD_REQUEST', 'סוג תוקף לא מוכר', { field: 'expiry' }) };
 }
 
 export default async function handleAdminApi(request, env) {
@@ -134,7 +163,7 @@ export default async function handleAdminApi(request, env) {
             if (method === 'GET') {
                 if (path.endsWith('/data')) {
                     const systems = await env.DB.prepare('SELECT id, description, token FROM system_tokens WHERE code_id = ? ORDER BY id DESC').bind(currentUser.id).all();
-                    return json({ user: currentUser, systems: systems.results });
+                    return json({ user: currentUser, systems: systems.results, client_ip: request.headers.get('CF-Connecting-IP') || '' });
                 }
                 if (path.endsWith('/logs')) {
                     const { results } = await env.DB.prepare(`
@@ -174,10 +203,8 @@ export default async function handleAdminApi(request, env) {
                     const ownSystem = await env.DB.prepare('SELECT id FROM system_tokens WHERE id = ? AND code_id = ?').bind(body.systemId, currentUser.id).first();
                     if (!ownSystem) return fail('BAD_REQUEST', 'המערכת שנבחרה אינה שייכת לחשבון שלך', { field: 'systemId' });
 
-                    const durationMinutes = parseInt(body.durationMinutes, 10);
-                    if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 60 * 24 * 365) {
-                        return fail('BAD_REQUEST', 'זמן הפעילות חייב להיות בין דקה אחת לשנה', { field: 'durationMinutes' });
-                    }
+                    const expiry = parseExpiry(body);
+                    if (expiry.error) return expiry.error;
 
                     const scope = parseTempScope(body);
                     if (scope.error) return scope.error;
@@ -197,12 +224,13 @@ export default async function handleAdminApi(request, env) {
                         return json({error: 'הקוד שבחרת (או שהוגרל) כבר קיים במערכת, בחר קוד אחר.'}, {status: 400});
                     }
 
-                    const expiresAt = Date.now() + (durationMinutes * 60 * 1000);
+                    const expiresAt = expiry.expiresAt;
                     await env.DB.prepare(`INSERT INTO temp_codes
-                        (code_id, system_id, temp_code, expires_at, allowed_phones, allow_incoming, allow_outgoing, allow_send, label)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                        (code_id, system_id, temp_code, expires_at, allowed_phones, allow_incoming, allow_outgoing, allow_send, label, allowed_ips, lock_first_ip)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                         .bind(currentUser.id, body.systemId, tempCodeStr, expiresAt,
-                              scope.phones, scope.allow_incoming, scope.allow_outgoing, scope.allow_send, scope.label).run();
+                              scope.phones, scope.allow_incoming, scope.allow_outgoing, scope.allow_send, scope.label,
+                              scope.ips, scope.lock_first_ip).run();
                     return json({ success: true, ok: true, temp_code: tempCodeStr, expires_at: expiresAt });
                 }
             }
@@ -222,14 +250,20 @@ export default async function handleAdminApi(request, env) {
                         const addMs = (body.minutes || 10) * 60 * 1000;
                         await env.DB.prepare('UPDATE temp_codes SET expires_at = MAX(expires_at, ?) + ? WHERE id = ? AND code_id = ?')
                             .bind(Date.now(), addMs, id, currentUser.id).run();
+                    } else if (body.action === 'expiry') {
+                        const expiry = parseExpiry(body);
+                        if (expiry.error) return expiry.error;
+                        await env.DB.prepare('UPDATE temp_codes SET expires_at = ? WHERE id = ? AND code_id = ?')
+                            .bind(expiry.expiresAt, id, currentUser.id).run();
                     } else if (body.action === 'toggle') {
                         await env.DB.prepare('UPDATE temp_codes SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ? AND code_id = ?')
                             .bind(id, currentUser.id).run();
                     } else if (body.action === 'scope') {
                         const scope = parseTempScope(body);
                         if (scope.error) return scope.error;
-                        await env.DB.prepare('UPDATE temp_codes SET allowed_phones = ?, allow_incoming = ?, allow_outgoing = ?, allow_send = ?, label = ? WHERE id = ? AND code_id = ?')
-                            .bind(scope.phones, scope.allow_incoming, scope.allow_outgoing, scope.allow_send, scope.label, id, currentUser.id).run();
+                        await env.DB.prepare('UPDATE temp_codes SET allowed_phones = ?, allow_incoming = ?, allow_outgoing = ?, allow_send = ?, label = ?, allowed_ips = ?, lock_first_ip = ? WHERE id = ? AND code_id = ?')
+                            .bind(scope.phones, scope.allow_incoming, scope.allow_outgoing, scope.allow_send, scope.label,
+                                  scope.ips, scope.lock_first_ip, id, currentUser.id).run();
                     } else {
                         return fail('BAD_REQUEST', 'פעולה לא מוכרת', { field: 'action' });
                     }

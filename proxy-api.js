@@ -13,7 +13,7 @@
 // תגובת הצלחה: { ok: true, responseStatus: 'OK', ... }
 // תגובת שגיאה: { ok: false, code: 'ERROR_CODE', error: '...' }  (ראו http.js)
 
-import { ok, fail, normalizePhone } from './http.js';
+import { ok, fail, normalizePhone, isPermanent, ipAllowed } from './http.js';
 import { ensureSchema } from './schema.js';
 
 const YM_API = 'https://www.call2all.co.il/ym/api/';
@@ -60,7 +60,7 @@ export default async function handleProxyApi(request, env) {
         const params = await readParams(request, url);
 
         // תיעוד הפעולה
-        const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const ip = ctx.ip || 'unknown';
         await env.DB.prepare('INSERT INTO temp_access_logs (temp_code_id, ip_address, endpoint, timestamp) VALUES (?, ?, ?, ?)')
             .bind(ctx.record.id, ip, action, Date.now()).run();
 
@@ -96,10 +96,20 @@ async function loadTempCode(request, env) {
     if (record.is_active !== 1) return { error: fail('TEMP_CODE_DISABLED') };
     if (Date.now() > record.expires_at) return { error: fail('TEMP_CODE_EXPIRED', undefined, { expiredAt: record.expires_at }) };
 
+    // --- הגבלת IP ---
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    if (record.lock_first_ip && !record.allowed_ips && ip) {
+        // כניסה ראשונה - נועלים את הקוד לכתובת הזו (רק אם אף בקשה מקבילה לא הקדימה)
+        await env.DB.prepare("UPDATE temp_codes SET allowed_ips = ? WHERE id = ? AND allowed_ips = ''").bind(ip, record.id).run();
+        const fresh = await env.DB.prepare('SELECT allowed_ips FROM temp_codes WHERE id = ?').bind(record.id).first();
+        record.allowed_ips = fresh ? fresh.allowed_ips : ip;
+    }
+    if (!ipAllowed(ip, record.allowed_ips)) return { error: fail('IP_NOT_ALLOWED') };
+
     const phones = String(record.allowed_phones || '')
         .split(',').map(normalizePhone).filter(Boolean);
 
-    return { ctx: { record, phones, restricted: phones.length > 0 } };
+    return { ctx: { record, phones, restricted: phones.length > 0, ip } };
 }
 
 function describe(ctx) {
@@ -108,8 +118,10 @@ function describe(ctx) {
         code: r.temp_code,
         label: r.label || '',
         system: r.system_desc,
-        expiresAt: r.expires_at,
-        remainingSeconds: Math.max(0, Math.floor((r.expires_at - Date.now()) / 1000)),
+        permanent: isPermanent(r.expires_at),
+        expiresAt: isPermanent(r.expires_at) ? null : r.expires_at,
+        remainingSeconds: isPermanent(r.expires_at) ? null : Math.max(0, Math.floor((r.expires_at - Date.now()) / 1000)),
+        ipRestricted: !!r.allowed_ips,
         restricted: ctx.restricted,
         phones: ctx.phones,
         permissions: {

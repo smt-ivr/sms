@@ -9,6 +9,8 @@
 //   allow_outgoing  - האם מותר לראות הודעות יוצאות
 //   allow_send      - האם מותר לשלוח הודעות
 //   label           - תיאור חופשי לקוד (למי הוא ניתן)
+//   allowed_ips     - כתובות / טווחי CIDR מותרים, מופרדים בפסיקים. ריק = מכל מקום.
+//   lock_first_ip   - נעילה אוטומטית לכתובת ה-IP של הכניסה הראשונה
 
 const TEMP_CODE_COLUMNS = [
     ['allowed_phones', "TEXT NOT NULL DEFAULT ''"],
@@ -16,6 +18,8 @@ const TEMP_CODE_COLUMNS = [
     ['allow_outgoing', 'INTEGER NOT NULL DEFAULT 1'],
     ['allow_send',     'INTEGER NOT NULL DEFAULT 1'],
     ['label',          "TEXT NOT NULL DEFAULT ''"],
+    ['allowed_ips',    "TEXT NOT NULL DEFAULT ''"],
+    ['lock_first_ip',  'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 let schemaReady = null;

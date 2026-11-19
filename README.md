@@ -15,6 +15,10 @@
 כשהקוד מוגבל למספרים מסוימים, הפרוקסי מחזיר רק הודעות מהם ואליהם,
 ושולח הודעות רק אליהם.
 
+### תוקף והגבלת IP
+- **תוקף:** משך קבוע (מדקות ועד שנה), משך מותאם, עד תאריך ושעה, או לצמיתות. קוד לצמיתות נשמר עם תאריך התפוגה של שנת 9999.
+- **IP:** רשימת כתובות או טווחי CIDR (IPv4 ו-IPv6). אפשר גם לנעול את הקוד אוטומטית לכתובת שממנה נכנסו בפעם הראשונה.
+
 ### מבנה תגובה
 
 הצלחה:
@@ -42,6 +46,7 @@
 | `ACTION_NOT_ALLOWED` | 403 | פעולה שלא ברשימה (מצורף `allowedActions`) |
 | `PERMISSION_DENIED` | 403 | לקוד אין הרשאה לפעולה הזו |
 | `PHONE_NOT_ALLOWED` | 403 | ניסיון שליחה למספר שאינו מורשה |
+| `IP_NOT_ALLOWED` | 403 | הבקשה הגיעה מכתובת IP שאינה מורשית |
 | `UPSTREAM_REJECTED` | 502 | ימות המשיח החזירו שגיאה (מצורף `upstreamStatus`) |
 | `UPSTREAM_BAD_RESPONSE` | 502 | התשובה מימות המשיח אינה JSON |
 | `UPSTREAM_UNREACHABLE` | 502 | אין תקשורת עם ימות המשיח |
@@ -50,6 +55,6 @@
 
 ### מסד נתונים
 
-לטבלה `temp_codes` נוספו העמודות `allowed_phones`, `allow_incoming`, `allow_outgoing`, `allow_send` ו-`label`.
+לטבלה `temp_codes` נוספו העמודות `allowed_phones`, `allow_incoming`, `allow_outgoing`, `allow_send`, `label`, `allowed_ips` ו-`lock_first_ip`.
 ה-Worker מוסיף אותן אוטומטית בפעם הראשונה שהוא רץ (`schema.js`).
-להרצה ידנית: `migrations/0001_temp_code_scopes.sql`.
+להרצה ידנית: הקבצים שבתיקייה `migrations/`.

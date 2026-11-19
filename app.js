@@ -33,7 +33,7 @@ let modalCallback = null;
 // הרשאות הקוד הזמני (מתקבל מ-/api/proxy/info)
 let tempInfo = null;
 // קודי שגיאה מהפרוקסי שמחייבים התנתקות
-const TEMP_AUTH_ERRORS = ["MISSING_TEMP_CODE", "INVALID_TEMP_CODE", "TEMP_CODE_DISABLED", "TEMP_CODE_EXPIRED", "OWNER_BLOCKED"];
+const TEMP_AUTH_ERRORS = ["MISSING_TEMP_CODE", "INVALID_TEMP_CODE", "TEMP_CODE_DISABLED", "TEMP_CODE_EXPIRED", "OWNER_BLOCKED", "IP_NOT_ALLOWED"];
 
 class ApiError extends Error {
     constructor(code, message, status) {
@@ -162,15 +162,17 @@ async function verifyAndLoad() {
 // התאמת הממשק להרשאות של הקוד הזמני
 function applyTempRestrictions() {
     const phonesText = tempInfo.restricted ? tempInfo.phones.join(", ") : "כל המספרים";
-    const expires = new Date(tempInfo.expiresAt).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const expires = tempInfo.permanent
+        ? "ללא הגבלת זמן"
+        : "עד " + new Date(tempInfo.expiresAt).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
     if (mfaStatusBadge) {
         mfaStatusBadge.classList.remove("hidden");
-        mfaStatusBadge.title = \`מספרים: \${phonesText}\\nבתוקף עד: \${expires}\`;
+        mfaStatusBadge.title = \`מספרים: \${phonesText}\\nתוקף: \${expires}\`;
         mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">\${tempInfo.restricted ? 'lock_person' : 'timer'}</span>
         <div style="display:flex; flex-direction:column; line-height:1.1;">
             <span>\${tempInfo.restricted ? 'גישה מוגבלת' : 'חיבור מאובטח'}</span>
-            <span style="font-size:9px; opacity:0.8; font-weight:normal;">עד \${expires}</span>
+            <span style="font-size:9px; opacity:0.8; font-weight:normal;">\${expires}</span>
         </div>\`;
     }
 
