@@ -1,13 +1,48 @@
+import { json, fail, normalizePhone } from './http.js';
+import { ensureSchema } from './schema.js';
+
+// קריאת הגדרות ההרשאה של קוד זמני מגוף הבקשה
+function parseTempScope(body) {
+    const rawPhones = Array.isArray(body.allowedPhones)
+        ? body.allowedPhones
+        : String(body.allowedPhones || '').split(/[,;\s\n]+/);
+    const phones = [];
+    for (const raw of rawPhones.map(p => String(p).trim()).filter(Boolean)) {
+        const phone = normalizePhone(raw);
+        if (!/^\d{9,12}$/.test(phone)) return { error: fail('BAD_REQUEST', `מספר טלפון לא תקין: ${raw}`, { field: 'allowedPhones' }) };
+        if (!phones.includes(phone)) phones.push(phone);
+    }
+    if (phones.length > 50) return { error: fail('BAD_REQUEST', 'ניתן להגביל עד 50 מספרים לקוד', { field: 'allowedPhones' }) };
+
+    const flag = (v, def) => (v === undefined ? def : (v ? 1 : 0));
+    const scope = {
+        phones: phones.join(','),
+        allow_incoming: flag(body.allowIncoming, 1),
+        allow_outgoing: flag(body.allowOutgoing, 1),
+        allow_send: flag(body.allowSend, 0),
+        label: String(body.label || '').trim().slice(0, 100),
+    };
+    if (!scope.allow_incoming && !scope.allow_outgoing && !scope.allow_send) {
+        return { error: fail('BAD_REQUEST', 'יש לבחור לפחות הרשאה אחת', { field: 'permissions' }) };
+    }
+    return scope;
+}
+
 export default async function handleAdminApi(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
-    
+
+    if (path.includes('/temp_codes')) {
+        try { await ensureSchema(env); }
+        catch (e) { return fail('INTERNAL_ERROR', 'שגיאה בעדכון מבנה מסד הנתונים'); }
+    }
+
     let storedAdminPass = null; 
     try {
         const record = await env.DB.prepare("SELECT value FROM settings WHERE key = 'admin_password'").first();
         if (record && record.value) storedAdminPass = record.value;
     } catch (e) {
-        return new Response(JSON.stringify({ error: 'Database error' }), { status: 500 });
+        return json({ error: 'Database error' }, { status: 500 });
     }
 
     const adminPass = request.headers.get('x-admin-password');
@@ -20,8 +55,8 @@ export default async function handleAdminApi(request, env) {
     }
     const isUser = currentUser && currentUser.is_blocked !== 1;
 
-    if (path.includes('/api/admin') && !isAdmin) return new Response(JSON.stringify({ error: 'Unauthorized Admin' }), { status: 401 });
-    if (path.includes('/api/user') && !isUser) return new Response(JSON.stringify({ error: 'Unauthorized User or Blocked' }), { status: 401 });
+    if (path.includes('/api/admin') && !isAdmin) return json({ error: 'Unauthorized Admin' }, { status: 401 });
+    if (path.includes('/api/user') && !isUser) return json({ error: 'Unauthorized User or Blocked' }, { status: 401 });
 
     try {
         const method = request.method;
@@ -36,12 +71,12 @@ export default async function handleAdminApi(request, env) {
                         SELECT a.*, COUNT(s.id) as current_systems 
                         FROM access_codes a LEFT JOIN system_tokens s ON a.id = s.code_id 
                         GROUP BY a.id ORDER BY a.id DESC`).all();
-                    return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
+                    return json(results);
                 }
                 if (path.includes('/systems/')) {
                     const codeId = path.split('/').pop();
                     const { results } = await env.DB.prepare('SELECT * FROM system_tokens WHERE code_id = ? ORDER BY id DESC').bind(codeId).all();
-                    return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
+                    return json(results);
                 }
                 if (path.endsWith('/logs')) {
                     const { results } = await env.DB.prepare(`
@@ -50,22 +85,22 @@ export default async function handleAdminApi(request, env) {
                         LEFT JOIN system_tokens s ON l.system_id = s.id
                         ORDER BY l.timestamp DESC LIMIT 200
                     `).all();
-                    return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
+                    return json(results);
                 }
             }
             if (method === 'POST') {
                 const body = await request.json();
                 if (path.endsWith('/settings/password')) {
                     await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'admin_password'").bind(body.newPassword).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
                 if (path.endsWith('/codes')) {
                     const conflict = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = UPPER(?) AND expires_at > ?').bind(body.code, Date.now()).first();
-                    if(conflict) return new Response(JSON.stringify({ error: 'הקוד הסודי כבר בשימוש כקוד זמני במערכת' }), { status: 400 });
+                    if(conflict) return json({ error: 'הקוד הסודי כבר בשימוש כקוד זמני במערכת' }, { status: 400 });
                     
                     await env.DB.prepare('INSERT INTO access_codes (code, owner_name, max_systems, is_blocked, allow_temp_codes) VALUES (?, ?, ?, ?, ?)')
                         .bind(body.code, body.owner_name, body.max_systems || 5, body.is_blocked || 0, body.allow_temp_codes || 0).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
             }
             if (method === 'PUT') {
@@ -73,11 +108,11 @@ export default async function handleAdminApi(request, env) {
                 if (path.includes('/codes/')) {
                     const id = path.split('/').pop();
                     const conflict = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = UPPER(?) AND expires_at > ?').bind(body.code, Date.now()).first();
-                    if(conflict) return new Response(JSON.stringify({ error: 'הקוד הסודי כבר בשימוש כקוד זמני במערכת' }), { status: 400 });
+                    if(conflict) return json({ error: 'הקוד הסודי כבר בשימוש כקוד זמני במערכת' }, { status: 400 });
 
                     await env.DB.prepare('UPDATE access_codes SET code=?, owner_name=?, max_systems=?, is_blocked=?, allow_temp_codes=? WHERE id=?')
                         .bind(body.code, body.owner_name, body.max_systems, body.is_blocked, body.allow_temp_codes || 0, id).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
             }
             if (method === 'DELETE') {
@@ -87,7 +122,7 @@ export default async function handleAdminApi(request, env) {
                     await env.DB.prepare('DELETE FROM temp_codes WHERE code_id = ?').bind(id).run();
                     await env.DB.prepare('DELETE FROM system_tokens WHERE code_id = ?').bind(id).run();
                     await env.DB.prepare('DELETE FROM access_codes WHERE id = ?').bind(id).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
             }
         }
@@ -99,7 +134,7 @@ export default async function handleAdminApi(request, env) {
             if (method === 'GET') {
                 if (path.endsWith('/data')) {
                     const systems = await env.DB.prepare('SELECT id, description, token FROM system_tokens WHERE code_id = ? ORDER BY id DESC').bind(currentUser.id).all();
-                    return new Response(JSON.stringify({ user: currentUser, systems: systems.results }), { headers: { 'Content-Type': 'application/json' } });
+                    return json({ user: currentUser, systems: systems.results });
                 }
                 if (path.endsWith('/logs')) {
                     const { results } = await env.DB.prepare(`
@@ -107,17 +142,17 @@ export default async function handleAdminApi(request, env) {
                         FROM access_logs l LEFT JOIN system_tokens s ON l.system_id = s.id
                         WHERE l.code_id = ? ORDER BY l.timestamp DESC LIMIT 50
                     `).bind(currentUser.id).all();
-                    return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
+                    return json(results);
                 }
                 if (path.endsWith('/temp_codes')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
+                    if (!currentUser.allow_temp_codes) return json({error: 'אין הרשאה'}, {status: 403});
                     const { results } = await env.DB.prepare(`
                         SELECT t.*, s.description as system_desc, 
                         (SELECT COUNT(*) FROM temp_access_logs WHERE temp_code_id = t.id) as usage_count
                         FROM temp_codes t JOIN system_tokens s ON t.system_id = s.id 
                         WHERE t.code_id = ? ORDER BY t.id DESC
                     `).bind(currentUser.id).all();
-                    return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
+                    return json(results);
                 }
             }
             if (method === 'POST') {
@@ -125,16 +160,28 @@ export default async function handleAdminApi(request, env) {
                     const body = await request.json();
                     const countReq = await env.DB.prepare('SELECT COUNT(*) as count FROM system_tokens WHERE code_id = ?').bind(currentUser.id).first();
                     if (countReq.count >= currentUser.max_systems) {
-                        return new Response(JSON.stringify({ error: `הגעת למגבלת המערכות שלך (${currentUser.max_systems})` }), { status: 400 });
+                        return json({ error: `הגעת למגבלת המערכות שלך (${currentUser.max_systems})` }, { status: 400 });
                     }
                     await env.DB.prepare('INSERT INTO system_tokens (code_id, description, token) VALUES (?, ?, ?)')
                         .bind(currentUser.id, body.description, body.token).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
                 if (path.endsWith('/temp_codes')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
+                    if (!currentUser.allow_temp_codes) return json({error: 'אין הרשאה'}, {status: 403});
                     const body = await request.json();
-                    
+
+                    // המערכת חייבת להיות שייכת למשתמש
+                    const ownSystem = await env.DB.prepare('SELECT id FROM system_tokens WHERE id = ? AND code_id = ?').bind(body.systemId, currentUser.id).first();
+                    if (!ownSystem) return fail('BAD_REQUEST', 'המערכת שנבחרה אינה שייכת לחשבון שלך', { field: 'systemId' });
+
+                    const durationMinutes = parseInt(body.durationMinutes, 10);
+                    if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 60 * 24 * 365) {
+                        return fail('BAD_REQUEST', 'זמן הפעילות חייב להיות בין דקה אחת לשנה', { field: 'durationMinutes' });
+                    }
+
+                    const scope = parseTempScope(body);
+                    if (scope.error) return scope.error;
+
                     let tempCodeStr = body.customCode ? body.customCode.trim().toUpperCase() : '';
                     if (!tempCodeStr) {
                         tempCodeStr = body.isNumeric 
@@ -147,13 +194,16 @@ export default async function handleAdminApi(request, env) {
                     const conflictTemp = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = ? AND expires_at > ? AND is_active = 1').bind(tempCodeStr, Date.now()).first();
                     
                     if (conflictAccess || conflictTemp) {
-                        return new Response(JSON.stringify({error: 'הקוד שבחרת (או שהוגרל) כבר קיים במערכת, בחר קוד אחר.'}), {status: 400});
+                        return json({error: 'הקוד שבחרת (או שהוגרל) כבר קיים במערכת, בחר קוד אחר.'}, {status: 400});
                     }
 
-                    const expiresAt = Date.now() + (body.durationMinutes * 60 * 1000);
-                    await env.DB.prepare('INSERT INTO temp_codes (code_id, system_id, temp_code, expires_at) VALUES (?, ?, ?, ?)')
-                        .bind(currentUser.id, body.systemId, tempCodeStr, expiresAt).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    const expiresAt = Date.now() + (durationMinutes * 60 * 1000);
+                    await env.DB.prepare(`INSERT INTO temp_codes
+                        (code_id, system_id, temp_code, expires_at, allowed_phones, allow_incoming, allow_outgoing, allow_send, label)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                        .bind(currentUser.id, body.systemId, tempCodeStr, expiresAt,
+                              scope.phones, scope.allow_incoming, scope.allow_outgoing, scope.allow_send, scope.label).run();
+                    return json({ success: true, ok: true, temp_code: tempCodeStr, expires_at: expiresAt });
                 }
             }
             if (method === 'PUT') {
@@ -162,10 +212,10 @@ export default async function handleAdminApi(request, env) {
                     const body = await request.json();
                     await env.DB.prepare('UPDATE system_tokens SET description=?, token=? WHERE id=? AND code_id=?')
                         .bind(body.description, body.token, id, currentUser.id).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
                 if (path.includes('/temp_codes/')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
+                    if (!currentUser.allow_temp_codes) return json({error: 'אין הרשאה'}, {status: 403});
                     const id = path.split('/').pop();
                     const body = await request.json();
                     if (body.action === 'extend') {
@@ -175,8 +225,15 @@ export default async function handleAdminApi(request, env) {
                     } else if (body.action === 'toggle') {
                         await env.DB.prepare('UPDATE temp_codes SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ? AND code_id = ?')
                             .bind(id, currentUser.id).run();
+                    } else if (body.action === 'scope') {
+                        const scope = parseTempScope(body);
+                        if (scope.error) return scope.error;
+                        await env.DB.prepare('UPDATE temp_codes SET allowed_phones = ?, allow_incoming = ?, allow_outgoing = ?, allow_send = ?, label = ? WHERE id = ? AND code_id = ?')
+                            .bind(scope.phones, scope.allow_incoming, scope.allow_outgoing, scope.allow_send, scope.label, id, currentUser.id).run();
+                    } else {
+                        return fail('BAD_REQUEST', 'פעולה לא מוכרת', { field: 'action' });
                     }
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
             }
             if (method === 'DELETE') {
@@ -185,22 +242,22 @@ export default async function handleAdminApi(request, env) {
                     await env.DB.prepare('DELETE FROM temp_access_logs WHERE temp_code_id IN (SELECT id FROM temp_codes WHERE system_id = ? AND code_id = ?)').bind(id, currentUser.id).run();
                     await env.DB.prepare('DELETE FROM temp_codes WHERE system_id = ? AND code_id = ?').bind(id, currentUser.id).run();
                     await env.DB.prepare('DELETE FROM system_tokens WHERE id=? AND code_id=?').bind(id, currentUser.id).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
                 if (path.includes('/temp_codes/')) {
-                    if (!currentUser.allow_temp_codes) return new Response(JSON.stringify({error: 'אין הרשאה'}), {status: 403});
+                    if (!currentUser.allow_temp_codes) return json({error: 'אין הרשאה'}, {status: 403});
                     const id = path.split('/').pop();
                     await env.DB.prepare('DELETE FROM temp_access_logs WHERE temp_code_id = ?').bind(id).run();
                     await env.DB.prepare('DELETE FROM temp_codes WHERE id = ? AND code_id = ?').bind(id, currentUser.id).run();
-                    return new Response(JSON.stringify({ success: true }));
+                    return json({ success: true });
                 }
             }
         }
 
     } catch (e) {
         console.error("API Error:", e);
-        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        return fail('INTERNAL_ERROR', e.message);
     }
 
-    return new Response('Not Found', { status: 404 });
+    return fail('NOT_FOUND');
 }

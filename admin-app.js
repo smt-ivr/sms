@@ -350,17 +350,28 @@ async function loadUserView(view) {
                     <button class="btn-primary" onclick="openTempCodeModal('\${encodeURIComponent(JSON.stringify(systems))}')"><span class="material-symbols-rounded">add</span> הנפק קוד</button>
                 </div>
                 <table>
-                    <tr><th>קוד זמני</th><th>מערכת מקושרת</th><th>תפוגה</th><th>שימושים</th><th>סטטוס</th><th>פעולות</th></tr>
+                    <tr><th>קוד זמני</th><th>תיאור</th><th>מערכת מקושרת</th><th>מספרים מורשים</th><th>הרשאות</th><th>תפוגה</th><th>שימושים</th><th>סטטוס</th><th>פעולות</th></tr>
                     \${codes.map(c => {
                         const isExpired = Date.now() > c.expires_at;
                         const timeStr = new Date(c.expires_at).toLocaleString('he-IL', {timeZone: 'Asia/Jerusalem'});
+                        const phones = (c.allowed_phones || '').split(',').filter(Boolean);
+                        const perms = [
+                            c.allow_incoming ? 'נכנסות' : null,
+                            c.allow_outgoing ? 'יוצאות' : null,
+                            c.allow_send ? 'שליחה' : null
+                        ].filter(Boolean);
+                        tempCodesCache[c.id] = c;
                         return \`<tr>
                             <td style="font-family:monospace; font-weight:bold; font-size:16px;">\${c.temp_code}</td>
-                            <td>\${c.system_desc}</td>
+                            <td>\${escapeHtml(c.label || '')}</td>
+                            <td>\${escapeHtml(c.system_desc)}</td>
+                            <td style="direction:ltr; font-family:monospace;">\${phones.length ? phones.join('<br>') : '<span class="badge" style="background:#f1f5f9; color:#334155">כל המספרים</span>'}</td>
+                            <td>\${perms.map(p => \`<span class="badge \${p === 'שליחה' ? 'red' : 'green'}" style="margin:2px">\${p}</span>\`).join('')}</td>
                             <td style="direction:ltr">\${timeStr}</td>
                             <td>\${c.usage_count}</td>
                             <td><span class="badge \${c.is_active && !isExpired ? 'green' : 'red'}">\${c.is_active ? (isExpired ? 'פג תוקף' : 'פעיל') : 'מושבת'}</span></td>
                             <td>
+                                <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempScopeModal(\${c.id})">הרשאות</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageTempCode(\${c.id}, 'extend')">הארך ב-10 דק'</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageTempCode(\${c.id}, 'toggle')">\${c.is_active ? 'השבת' : 'הפעל'}</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px; border-color:var(--danger); color:var(--danger);" onclick="manageTempCode(\${c.id}, 'delete')">מחק</button>
@@ -422,18 +433,74 @@ window.openTempCodeModal = function(systemsJson) {
             <input type="checkbox" id="t-numeric" style="width:18px; height:18px;">
             <label style="margin:0; font-size:15px; cursor:pointer;" for="t-numeric">הגרל קוד של ספרות בלבד</label>
         </div>
+        \${tempScopeFields({ allow_incoming: 1, allow_outgoing: 1, allow_send: 0 })}
     \`;
     document.getElementById('modal-save-btn').onclick = async () => {
-        const body = { 
-            systemId: document.getElementById('t-system').value, 
+        const body = {
+            systemId: document.getElementById('t-system').value,
             durationMinutes: parseInt(document.getElementById('t-mins').value),
             customCode: document.getElementById('t-custom').value,
-            isNumeric: document.getElementById('t-numeric').checked
+            isNumeric: document.getElementById('t-numeric').checked,
+            ...readTempScopeFields()
         };
         showLoader();
         try {
-            await apiCall('/api/user/temp_codes', 'POST', body);
-            closeModal(); showToast('קוד הונפק בהצלחה'); loadUserView('temp_codes');
+            const res = await apiCall('/api/user/temp_codes', 'POST', body);
+            closeModal(); showToast('קוד הונפק בהצלחה: ' + res.temp_code); loadUserView('temp_codes');
+        } catch(e) { showLoader(false); }
+    };
+    document.getElementById('generic-modal').classList.add('show');
+};
+
+const tempCodesCache = {};
+
+function escapeHtml(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// שדות ההרשאה של קוד זמני (משותף להנפקה ולעריכה)
+function tempScopeFields(c) {
+    const phones = (c.allowed_phones || '').split(',').filter(Boolean).join('\\n');
+    const cb = (id, checked, text, color) => \`
+        <div class="form-group" style="display:flex; align-items:center; gap:10px; margin:6px 0;">
+            <input type="checkbox" id="\${id}" \${checked ? 'checked' : ''} style="width:18px; height:18px;">
+            <label style="margin:0; font-size:15px; cursor:pointer; \${color ? 'color:' + color : ''}" for="\${id}">\${text}</label>
+        </div>\`;
+    return \`
+        <hr style="border:none; border-top:1px solid #e2e8f0; margin:20px 0;">
+        <div class="form-group"><label>תיאור (למי ניתן הקוד) - אופציונלי</label>
+        <input type="text" id="t-label" class="form-control" maxlength="100" value="\${escapeHtml(c.label || '')}"></div>
+
+        <div class="form-group"><label>הגבלה למספרים מסוימים (מספר בכל שורה, ריק = כל המספרים)</label>
+        <textarea id="t-phones" class="form-control" rows="3" style="direction:ltr; font-family:monospace;" placeholder="0501234567">\${phones}</textarea></div>
+
+        <label style="display:block; margin-bottom:8px; font-size:14px; font-weight:600;">מה מותר לבעל הקוד</label>
+        \${cb('t-allow-in', c.allow_incoming, 'צפייה בהודעות נכנסות')}
+        \${cb('t-allow-out', c.allow_outgoing, 'צפייה בהודעות יוצאות')}
+        \${cb('t-allow-send', c.allow_send, 'שליחת הודעות (רק למספרים המורשים, אם הוגבלו)', 'var(--danger)')}
+    \`;
+}
+
+function readTempScopeFields() {
+    return {
+        label: document.getElementById('t-label').value.trim(),
+        allowedPhones: document.getElementById('t-phones').value,
+        allowIncoming: document.getElementById('t-allow-in').checked,
+        allowOutgoing: document.getElementById('t-allow-out').checked,
+        allowSend: document.getElementById('t-allow-send').checked
+    };
+}
+
+window.openTempScopeModal = function(id) {
+    const c = tempCodesCache[id];
+    if (!c) return;
+    document.getElementById('modal-title').textContent = 'הרשאות לקוד ' + c.temp_code;
+    document.getElementById('modal-body').innerHTML = tempScopeFields(c);
+    document.getElementById('modal-save-btn').onclick = async () => {
+        showLoader();
+        try {
+            await apiCall(\`/api/user/temp_codes/\${id}\`, 'PUT', { action: 'scope', ...readTempScopeFields() });
+            closeModal(); showToast('ההרשאות עודכנו'); loadUserView('temp_codes');
         } catch(e) { showLoader(false); }
     };
     document.getElementById('generic-modal').classList.add('show');

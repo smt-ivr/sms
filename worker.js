@@ -8,6 +8,7 @@ import handleProxyApi from './proxy-api.js';
 import adminHtmlContent from './admin-html.js';
 import adminCssContent from './admin-css.js';
 import adminAppJsContent from './admin-app.js';
+import { fail } from './http.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -77,6 +78,7 @@ export default {
       });
     }
 
+    if (path.includes('/api/')) return fail('NOT_FOUND');
     return new Response('404 Not Found (Path: ' + path + ')', { status: 404 });
   },
 };

@@ -30,15 +30,42 @@ const modalOkBtn = document.getElementById("modal-ok-btn");
 const modalCancelBtn = document.getElementById("modal-cancel-btn");
 let modalCallback = null;
 
-// פונקציית fetch מאוחדת התומכת בפרוקסי
-async function apiFetch(endpoint, paramsStr) {
-    if (isTempMode) {
-        const res = await fetch(\`/sms/api/proxy/\${endpoint}?\${paramsStr}\`, { headers: { 'x-temp-code': token } });
-        if (!res.ok) throw new Error(await res.text());
-        return res;
-    } else {
-        return await fetch(\`\${API_BASE}/\${endpoint}?token=\${token}&\${paramsStr}\`);
+// הרשאות הקוד הזמני (מתקבל מ-/api/proxy/info)
+let tempInfo = null;
+// קודי שגיאה מהפרוקסי שמחייבים התנתקות
+const TEMP_AUTH_ERRORS = ["MISSING_TEMP_CODE", "INVALID_TEMP_CODE", "TEMP_CODE_DISABLED", "TEMP_CODE_EXPIRED", "OWNER_BLOCKED"];
+
+class ApiError extends Error {
+    constructor(code, message, status) {
+        super(message || code);
+        this.code = code;
+        this.status = status;
     }
+}
+
+async function proxyRequest(endpoint, paramsStr = "") {
+    let res, data;
+    try {
+        res = await fetch(\`/sms/api/proxy/\${endpoint}\${paramsStr ? "?" + paramsStr : ""}\`, { headers: { 'x-temp-code': token } });
+    } catch (e) {
+        throw new ApiError("NETWORK_ERROR", "שגיאת רשת מול השרת", 0);
+    }
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok || !data || data.ok === false) {
+        throw new ApiError(data?.code || "UNKNOWN_ERROR", data?.error || "שגיאה לא צפויה", res.status);
+    }
+    return data;
+}
+
+// פונקציית fetch מאוחדת התומכת בפרוקסי - מחזירה תמיד אובייקט JSON
+async function apiFetch(endpoint, paramsStr) {
+    if (isTempMode) return proxyRequest(endpoint, paramsStr);
+    const res = await fetch(\`\${API_BASE}/\${endpoint}?token=\${token}&\${paramsStr}\`);
+    return res.json();
+}
+
+function canTemp(perm) {
+    return !isTempMode || !tempInfo || !!tempInfo.permissions[perm];
 }
 
 // ניהול הודעות שגיאה במסך התחברות
@@ -84,22 +111,28 @@ function cleanUrl() {
     window.history.replaceState({path: newUrl}, '', newUrl);
 }
 
-function verifyAndLoad() {
+async function verifyAndLoad() {
     if (isTempMode) {
+        loader.classList.remove("hidden");
+        loaderTextMain.textContent = "מאמת קוד זמני...";
+        try {
+            const data = await proxyRequest("info");
+            tempInfo = data.tempCode;
+        } catch (e) {
+            loader.classList.add("hidden");
+            logoutProcess();
+            showError(e.message);
+            return;
+        }
         loader.classList.add("hidden");
         showApp();
-        if(mfaStatusBadge) {
-            mfaStatusBadge.classList.remove("hidden");
-            mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">timer</span>
-            <div style="display:flex; flex-direction:column; line-height:1.1;">
-                <span>חיבור מאובטח</span>
-                <span style="font-size:9px; opacity:0.8; font-weight:normal;">Proxy (זמני)</span>
-            </div>\`;
-        }
+        applyTempRestrictions();
         loadAllMessages();
         pollInterval = setInterval(() => loadAllMessages(true), 10000);
         return;
     }
+    tempInfo = null;
+    document.getElementById("new-chat-btn").classList.remove("hidden");
 
     loader.classList.remove("hidden");
     loaderTextMain.textContent = "מאמת נתונים...";
@@ -126,6 +159,26 @@ function verifyAndLoad() {
     });
 }
 
+// התאמת הממשק להרשאות של הקוד הזמני
+function applyTempRestrictions() {
+    const phonesText = tempInfo.restricted ? tempInfo.phones.join(", ") : "כל המספרים";
+    const expires = new Date(tempInfo.expiresAt).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+    if (mfaStatusBadge) {
+        mfaStatusBadge.classList.remove("hidden");
+        mfaStatusBadge.title = \`מספרים: \${phonesText}\\nבתוקף עד: \${expires}\`;
+        mfaStatusBadge.innerHTML = \`<span class="material-symbols-rounded badge-icon">\${tempInfo.restricted ? 'lock_person' : 'timer'}</span>
+        <div style="display:flex; flex-direction:column; line-height:1.1;">
+            <span>\${tempInfo.restricted ? 'גישה מוגבלת' : 'חיבור מאובטח'}</span>
+            <span style="font-size:9px; opacity:0.8; font-weight:normal;">עד \${expires}</span>
+        </div>\`;
+    }
+
+    // שיחה חדשה מותרת רק אם יש הרשאת שליחה ואין הגבלת מספרים
+    const allowNewChat = tempInfo.permissions.send && !tempInfo.restricted;
+    document.getElementById("new-chat-btn").classList.toggle("hidden", !allowNewChat);
+}
+
 function showApp() {
     loginScreen.classList.add("hidden");
     appScreen.classList.remove("hidden");
@@ -141,6 +194,8 @@ function logoutProcess() {
     localStorage.removeItem("ym_is_temp");
     token = "";
     isTempMode = false;
+    tempInfo = null;
+    document.getElementById("new-chat-btn").classList.remove("hidden");
     lastDataHash = "";
     conversations = {};
     activeContact = null;
@@ -241,24 +296,32 @@ async function loadAllMessages(isSilent = false) {
     if (!isSilent) loader.classList.remove("hidden");
     
     try {
-        const resIn = await apiFetch('GetIncomingSms', 'limit=3000');
-        const dataIn = await resIn.json();
-        
-        const resOut = await apiFetch('GetSmsOutLog', 'limit=3000');
-        const dataOut = await resOut.json();
+        const empty = { responseStatus: "OK", rows: [] };
+        const [dataIn, dataOut] = await Promise.all([
+            canTemp("incoming") ? apiFetch('GetIncomingSms', 'limit=3000') : empty,
+            canTemp("outgoing") ? apiFetch('GetSmsOutLog', 'limit=3000') : empty,
+        ]);
 
         if (dataIn.responseStatus !== "OK" || dataOut.responseStatus !== "OK") throw new Error("Token invalid");
 
         const currentHash = JSON.stringify(dataIn.rows) + JSON.stringify(dataOut.rows);
-        if (isSilent && currentHash === lastDataHash) return; 
+        if (isSilent && currentHash === lastDataHash) return;
         lastDataHash = currentHash;
 
         processMessages(dataIn.rows || [], dataOut.rows || []);
     } catch (e) {
+        // שגיאת הרשאה של קוד זמני (פג תוקף / הושבת) - התנתקות גם בריענון שקט
+        if (e instanceof ApiError && TEMP_AUTH_ERRORS.includes(e.code)) {
+            logoutProcess();
+            showError(e.message);
+            return;
+        }
         if (!isSilent) {
             console.error(e);
-            if (e.message && (e.message.includes("Token invalid") || e.message.includes("Token expired") || e.message.includes("קוד זמני שגוי") || e.message.includes("מושבת"))) {
-                 logoutProcess();
+            if (e instanceof ApiError) {
+                showCustomAlert("שגיאה", e.message);
+            } else if (e.message && (e.message.includes("Token invalid") || e.message.includes("Token expired"))) {
+                logoutProcess();
             }
         }
     } finally {
@@ -279,9 +342,22 @@ function processMessages(inboxRows, outboxRows) {
     for (let contact in conversations) {
         conversations[contact].sort((a, b) => new Date(a.time.replace(" ", "T")) - new Date(b.time.replace(" ", "T")));
     }
+    // קוד זמני המוגבל לכמה מספרים - מציגים אותם תמיד ברשימה גם בלי הודעות
+    if (isTempMode && tempInfo && tempInfo.restricted) {
+        tempInfo.phones.forEach(p => { if (!conversations[p]) conversations[p] = []; });
+    }
     renderContacts();
     if (activeContact && conversations[activeContact]) {
-        renderChat(activeContact, true); 
+        renderChat(activeContact, true);
+    } else if (!activeContact && isTempMode && tempInfo && tempInfo.restricted && tempInfo.phones.length === 1) {
+        // מספר יחיד - פותחים את השיחה ישירות
+        activeContact = tempInfo.phones[0];
+        renderContacts();
+        renderChat(activeContact);
+        if (window.innerWidth <= 768) {
+            sidebar.classList.add("hidden-mobile");
+            chatArea.classList.remove("hidden-mobile");
+        }
     }
 }
 
@@ -296,16 +372,21 @@ function renderContacts() {
     contactsListEl.innerHTML = "";
     const sortedContacts = Object.keys(conversations).map(contact => {
         const msgs = conversations[contact];
-        return { contact, lastMsg: msgs[msgs.length - 1] };
-    }).sort((a, b) => new Date(b.lastMsg.time.replace(" ", "T")) - new Date(a.lastMsg.time.replace(" ", "T")));
+        return { contact, lastMsg: msgs[msgs.length - 1] || null };
+    }).sort((a, b) => {
+        const ta = a.lastMsg ? new Date(a.lastMsg.time.replace(" ", "T")).getTime() : 0;
+        const tb = b.lastMsg ? new Date(b.lastMsg.time.replace(" ", "T")).getTime() : 0;
+        return tb - ta;
+    });
 
     sortedContacts.forEach(item => {
         const div = document.createElement("div");
         div.className = "contact-item" + (activeContact === item.contact ? " active" : "");
-        const timeStr = formatMessageDate(item.lastMsg.time);
-        const statusIcon = item.lastMsg.isOut ? getStatusIconHtml(item.lastMsg.status) : "";
+        const timeStr = item.lastMsg ? formatMessageDate(item.lastMsg.time) : "";
+        const statusIcon = item.lastMsg && item.lastMsg.isOut ? getStatusIconHtml(item.lastMsg.status) : "";
+        const lastText = item.lastMsg ? item.lastMsg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "אין הודעות עדיין";
         div.innerHTML = \`<div class="contact-top"><span class="contact-name">\${item.contact}</span><span class="contact-time">\${timeStr}</span></div>
-            <div class="contact-last-msg">\${statusIcon} \${item.lastMsg.text}</div>\`;
+            <div class="contact-last-msg">\${statusIcon} \${lastText}</div>\`;
         
         div.addEventListener("click", () => {
             activeContact = item.contact;
@@ -322,13 +403,15 @@ function renderContacts() {
 
 function renderChat(contact, preserveScroll = false) {
     chatTitleEl.textContent = contact;
-    chatPhoneEl.textContent = "הודעות SMS";
-    chatInputArea.classList.remove("hidden");
+    chatPhoneEl.textContent = canTemp("send") ? "הודעות SMS" : "הודעות SMS · צפייה בלבד";
+    chatInputArea.classList.toggle("hidden", !canTemp("send"));
     const msgs = conversations[contact] || [];
     const isAtBottom = chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop <= chatMessagesEl.clientHeight + 50;
 
     if (msgs.length === 0) {
-        chatMessagesEl.innerHTML = '<div class="empty-state"><span class="material-symbols-rounded empty-state-icon">chat</span><h3>שיחה חדשה</h3><p>שלח הודעה כדי להתחיל</p></div>';
+        chatMessagesEl.innerHTML = canTemp("send")
+            ? '<div class="empty-state"><span class="material-symbols-rounded empty-state-icon">chat</span><h3>שיחה חדשה</h3><p>שלח הודעה כדי להתחיל</p></div>'
+            : '<div class="empty-state"><span class="material-symbols-rounded empty-state-icon">chat</span><h3>אין הודעות</h3><p>עדיין אין הודעות עם מספר זה</p></div>';
         return;
     }
 
@@ -369,17 +452,21 @@ async function sendSmsMessage() {
     newMessageInput.disabled = true;
     
     try {
-        const res = await apiFetch('SendSms', \`phones=\${activeContact}&message=\${encodeURIComponent(text)}\`);
-        const data = await res.json();
+        const data = await apiFetch('SendSms', \`phones=\${encodeURIComponent(activeContact)}&message=\${encodeURIComponent(text)}\`);
         if (data.responseStatus === "OK") {
             newMessageInput.value = "";
             await loadAllMessages(true);
-            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; 
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
         } else {
             showCustomAlert("שגיאה", "ההודעה לא נשלחה: " + (data.message || ""));
         }
     } catch (e) {
-        showCustomAlert("שגיאה", "שגיאת רשת בשליחה.");
+        if (e instanceof ApiError && TEMP_AUTH_ERRORS.includes(e.code)) {
+            logoutProcess();
+            showError(e.message);
+        } else {
+            showCustomAlert("שגיאה", e instanceof ApiError ? "ההודעה לא נשלחה: " + e.message : "שגיאת רשת בשליחה.");
+        }
     } finally {
         sendBtn.innerHTML = originalBtn;
         sendBtn.disabled = false;
@@ -458,24 +545,24 @@ document.getElementById("login-personal-code-btn").addEventListener("click", asy
             }
         }
 
-        const tempRes = await fetch(\`/sms/api/proxy/GetIncomingSms?limit=1\`, { 
-            headers: { 'x-temp-code': code } 
-        });
+        // ניסיון כקוד זמני - הפרוקסי מחזיר קוד שגיאה מדויק
+        const tempRes = await fetch('/sms/api/proxy/info', { headers: { 'x-temp-code': code } });
+        let tempData = null;
+        try { tempData = await tempRes.json(); } catch (e) {}
 
-        if (tempRes.ok) {
-            const tempData = await tempRes.json();
-            if (tempData.responseStatus === "OK" || tempData.responseStatus === "False") {
-                token = code;
-                isTempMode = true;
-                localStorage.setItem("ym_token", token);
-                localStorage.setItem("ym_is_temp", "true");
-                verifyAndLoad(); 
-                return; 
-            }
+        if (tempRes.ok && tempData && tempData.ok) {
+            token = code;
+            isTempMode = true;
+            localStorage.setItem("ym_token", token);
+            localStorage.setItem("ym_is_temp", "true");
+            verifyAndLoad();
+            return;
         }
 
         loader.classList.add("hidden");
-        showError("הקוד שהוזן שגוי, מושבת או שפג תוקפו.");
+        // קוד שלא קיים בכלל - הודעה כללית; קוד שקיים אבל לא תקף - הסיבה המדויקת
+        if (tempData && tempData.code && tempData.code !== "INVALID_TEMP_CODE") showError(tempData.error);
+        else showError("הקוד שהוזן שגוי או לא קיים.");
 
     } catch (e) {
         loader.classList.add("hidden");
