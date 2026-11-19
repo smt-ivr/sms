@@ -381,6 +381,7 @@ async function loadUserView(view) {
                             <td>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempScopeModal(\${c.id})">הרשאות</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="copyTempLink(\${c.id})">העתק קישור</button>
+                                <button class="btn-outline" style="padding:6px; border-radius:8px; border-color:var(--primary); color:var(--primary);" onclick="openTempEmailModal(\${c.id})">שלח במייל</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempRenameModal(\${c.id})">שנה קוד</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempExpiryModal(\${c.id})">תוקף</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageTempCode(\${c.id}, 'toggle')">\${c.is_active ? 'השבת' : 'הפעל'}</button>
@@ -464,6 +465,67 @@ window.openTempCodeModal = function(systemsJson) {
 };
 
 const tempCodesCache = {};
+
+// ---------- שליחת הקוד במייל מעוצב ----------
+let mailPreviewTimer = null;
+
+window.openTempEmailModal = function(id) {
+    const c = tempCodesCache[id];
+    if (!c) return;
+    document.getElementById('modal-title').textContent = 'שליחת הקוד ' + c.temp_code + ' במייל';
+    document.getElementById('modal-body').innerHTML = \`
+        <div class="form-group"><label>כתובת מייל של הנמען</label>
+        <input type="email" id="e-to" class="form-control" style="direction:ltr;" placeholder="name@example.com"></div>
+        <div class="form-group"><label>שם הנמען (אופציונלי)</label>
+        <input type="text" id="e-name" class="form-control" maxlength="60" value="\${escapeHtml(c.label || '')}" oninput="scheduleMailPreview(\${id})"></div>
+        <div class="form-group"><label>הודעה אישית (אופציונלי)</label>
+        <textarea id="e-message" class="form-control" rows="3" maxlength="1000" placeholder="למשל: מצורפת גישה להודעות האימות" oninput="scheduleMailPreview(\${id})"></textarea></div>
+        <label style="display:block; margin-bottom:8px; font-size:14px; font-weight:600;">תצוגה מקדימה</label>
+        <div style="border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; background:#eef2f7;">
+            <iframe id="e-preview" title="תצוגה מקדימה" style="width:100%; height:440px; border:0; display:block;"></iframe>
+        </div>\`;
+    const saveBtn = document.getElementById('modal-save-btn');
+    saveBtn.onclick = async () => {
+        const to = document.getElementById('e-to').value.trim();
+        if (!isValidEmail(to)) return showToast('כתובת המייל אינה תקינה', 'error');
+        showLoader(true, 'שולח מייל...');
+        try {
+            await apiCall(\`/api/user/temp_codes/\${id}/email\`, 'POST', {
+                to,
+                name: document.getElementById('e-name').value.trim(),
+                message: document.getElementById('e-message').value.trim()
+            });
+            showLoader(false); closeModal(); showToast('המייל נשלח אל ' + to);
+        } catch(e) { showLoader(false); }
+    };
+    document.getElementById('generic-modal').classList.add('show');
+    loadMailPreview(id);
+    setTimeout(() => document.getElementById('e-to').focus(), 100);
+};
+
+window.scheduleMailPreview = function(id) {
+    clearTimeout(mailPreviewTimer);
+    mailPreviewTimer = setTimeout(() => loadMailPreview(id), 400);
+};
+
+async function loadMailPreview(id) {
+    const frame = document.getElementById('e-preview');
+    if (!frame) return;
+    try {
+        const res = await fetch(\`/sms/api/user/temp_codes/\${id}/email\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-user-code': credentials },
+            body: JSON.stringify({
+                preview: true,
+                name: document.getElementById('e-name').value.trim(),
+                message: document.getElementById('e-message').value.trim()
+            })
+        });
+        const data = await res.json();
+        if (data.ok) frame.srcdoc = data.html;
+    } catch (e) { /* התצוגה המקדימה אינה קריטית */ }
+}
+
 
 // שינוי הקוד בלבד - ההרשאות, התוקף וההגבלות נשמרים
 window.openTempRenameModal = function(id) {

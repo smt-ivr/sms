@@ -5,3 +5,9 @@ compatibility_date = "2024-01-01"
 binding = "DB"
 database_name = "sms-db"
 database_id = "d224ec0e-9fbd-4a32-8884-6c797be3bf0d"
+
+# המסד המשותף של מסכת של שבת - ממנו נלקח מפתח ה-Resend (ms_settings.resend_api_key), קריאה בלבד
+[[d1_databases]]
+binding = "MAIL_DB"
+database_name = "yemot-pay"
+database_id = "dd8bf73b-6dca-446d-a929-e467025ceac7"

@@ -31,6 +31,10 @@ export const ERRORS = {
     UPSTREAM_UNREACHABLE: { status: 502, message: 'שגיאת תקשורת מול ימות המשיח' },
     UPSTREAM_TIMEOUT:     { status: 504, message: 'ימות המשיח לא הגיבו בזמן' },
 
+    // --- מייל ---
+    MAIL_NOT_CONFIGURED:  { status: 409, message: 'שליחת מיילים לא הוגדרה' },
+    MAIL_FAILED:          { status: 502, message: 'שליחת המייל נכשלה' },
+
     // --- כללי ---
     INTERNAL_ERROR:       { status: 500, message: 'שגיאת שרת פנימית' },
 };

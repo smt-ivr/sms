@@ -1,5 +1,8 @@
+import { getMailKey } from './mail.js';
+
 export async function sendVerificationEmail(toEmail, code, env) {
-  const resendApiKey = env.RESEND_API_KEY;
+  let resendApiKey = '';
+  try { resendApiKey = await getMailKey(env); } catch (e) { console.error('Mail key error:', e); }
 
   if (!resendApiKey) {
     return { success: false, message: "מפתח ה-API של Resend לא מוגדר בשרת." };

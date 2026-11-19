@@ -1,5 +1,6 @@
 import { json, fail, normalizePhone, senderKey, isPhoneLike, PERMANENT_EXPIRY, parseIpRule, splitList } from './http.js';
 import { callYm } from './ym.js';
+import { tempCodeMail, sendMail, validEmail } from './mail.js';
 import { ensureSchema } from './schema.js';
 
 // קריאת הגדרות ההרשאה של קוד זמני מגוף הבקשה
@@ -218,6 +219,36 @@ export default async function handleAdminApi(request, env) {
                 }
             }
             if (method === 'POST') {
+                // שליחת קוד זמני במייל מעוצב עם קישור כניסה ישירה (preview=true מחזיר רק את ה-HTML)
+                const mailMatch = path.match(/\/api\/user\/temp_codes\/(\d+)\/email$/);
+                if (mailMatch) {
+                    if (!currentUser.allow_temp_codes) return fail('PERMISSION_DENIED', 'אין הרשאה לקודים זמניים');
+                    const body = await request.json().catch(() => ({}));
+                    const tc = await env.DB.prepare('SELECT * FROM temp_codes WHERE id = ? AND code_id = ?').bind(mailMatch[1], currentUser.id).first();
+                    if (!tc) return fail('NOT_FOUND', 'הקוד לא נמצא בחשבון שלך');
+
+                    const to = String(body.to || '').trim().toLowerCase();
+                    if (!body.preview && !validEmail(to)) return fail('BAD_REQUEST', 'כתובת המייל אינה תקינה', { field: 'to' });
+
+                    const mail = tempCodeMail({
+                        code: tc.temp_code,
+                        link: `${url.origin}/sms?code=${encodeURIComponent(tc.temp_code)}`,
+                        recipientName: String(body.name || '').trim().slice(0, 60),
+                        senderName: currentUser.owner_name,
+                        message: String(body.message || '').trim().slice(0, 1000),
+                        phones: String(tc.allowed_phones || '').split(',').filter(Boolean),
+                        permissions: { incoming: !!tc.allow_incoming, outgoing: !!tc.allow_outgoing, send: !!tc.allow_send },
+                        expiresAt: tc.expires_at,
+                    });
+                    if (body.preview) return json({ ok: true, subject: mail.subject, html: mail.html });
+
+                    if (!tc.is_active || Date.now() > tc.expires_at) {
+                        return fail('BAD_REQUEST', 'הקוד מושבת או שפג תוקפו - הפעילו / האריכו אותו לפני השליחה');
+                    }
+                    const sent = await sendMail(env, { to, ...mail, fromName: `${currentUser.owner_name} · S.M.T` });
+                    if (!sent.ok) return fail(sent.status === 409 ? 'MAIL_NOT_CONFIGURED' : 'MAIL_FAILED', sent.error);
+                    return json({ ok: true, success: true, to });
+                }
                 if (path.endsWith('/systems')) {
                     const body = await request.json();
                     const countReq = await env.DB.prepare('SELECT COUNT(*) as count FROM system_tokens WHERE code_id = ?').bind(currentUser.id).first();
