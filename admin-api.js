@@ -283,6 +283,24 @@ export default async function handleAdminApi(request, env) {
                         const addMs = (body.minutes || 10) * 60 * 1000;
                         await env.DB.prepare('UPDATE temp_codes SET expires_at = MAX(expires_at, ?) + ? WHERE id = ? AND code_id = ?')
                             .bind(Date.now(), addMs, id, currentUser.id).run();
+                    } else if (body.action === 'rename') {
+                        // החלפת הקוד בלבד - הרשאות, תוקף והגבלות נשארים
+                        let newCode = String(body.newCode || '').trim().toUpperCase();
+                        if (!newCode) {
+                            newCode = body.isNumeric
+                                ? Math.floor(100000 + Math.random() * 900000).toString()
+                                : Math.random().toString(36).substring(2, 10).toUpperCase();
+                        }
+                        if (!/^[A-Z0-9_-]{3,30}$/.test(newCode)) {
+                            return fail('BAD_REQUEST', 'הקוד חייב להכיל 3 עד 30 תווים: אותיות באנגלית, ספרות, מקף או קו תחתון', { field: 'newCode' });
+                        }
+                        const own = await env.DB.prepare('SELECT id FROM temp_codes WHERE id = ? AND code_id = ?').bind(id, currentUser.id).first();
+                        if (!own) return fail('NOT_FOUND', 'הקוד לא נמצא בחשבון שלך');
+                        const conflictAccess = await env.DB.prepare('SELECT id FROM access_codes WHERE UPPER(code) = ?').bind(newCode).first();
+                        const conflictTemp = await env.DB.prepare('SELECT id FROM temp_codes WHERE UPPER(temp_code) = ? AND id != ? AND expires_at > ? AND is_active = 1').bind(newCode, id, Date.now()).first();
+                        if (conflictAccess || conflictTemp) return fail('BAD_REQUEST', 'הקוד שבחרת (או שהוגרל) כבר קיים במערכת, בחר קוד אחר.', { field: 'newCode' });
+                        await env.DB.prepare('UPDATE temp_codes SET temp_code = ? WHERE id = ? AND code_id = ?').bind(newCode, id, currentUser.id).run();
+                        return json({ success: true, ok: true, temp_code: newCode });
                     } else if (body.action === 'expiry') {
                         const expiry = parseExpiry(body);
                         if (expiry.error) return expiry.error;

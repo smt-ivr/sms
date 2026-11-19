@@ -51,7 +51,7 @@ export default {
 
     // ניתובים לאפליקציה הראשית
     if (path === '/sms') {
-      return Response.redirect(url.origin + '/sms/', 301);
+      return Response.redirect(url.origin + '/sms/' + url.search, 301); // שומר פרמטרים כמו ?code=
     }
 
     if (path === '/' || path === '/index.html' || path === '/sms/') {

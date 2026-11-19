@@ -380,6 +380,8 @@ async function loadUserView(view) {
                             <td><span class="badge \${c.is_active && !isExpired ? 'green' : 'red'}">\${c.is_active ? (isExpired ? 'פג תוקף' : 'פעיל') : 'מושבת'}</span></td>
                             <td>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempScopeModal(\${c.id})">הרשאות</button>
+                                <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="copyTempLink(\${c.id})">העתק קישור</button>
+                                <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempRenameModal(\${c.id})">שנה קוד</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="openTempExpiryModal(\${c.id})">תוקף</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageTempCode(\${c.id}, 'toggle')">\${c.is_active ? 'השבת' : 'הפעל'}</button>
                                 <button class="btn-outline" style="padding:6px; border-radius:8px; border-color:var(--danger); color:var(--danger);" onclick="manageTempCode(\${c.id}, 'delete')">מחק</button>
@@ -462,6 +464,48 @@ window.openTempCodeModal = function(systemsJson) {
 };
 
 const tempCodesCache = {};
+
+// שינוי הקוד בלבד - ההרשאות, התוקף וההגבלות נשמרים
+window.openTempRenameModal = function(id) {
+    const c = tempCodesCache[id];
+    if (!c) return;
+    document.getElementById('modal-title').textContent = 'שינוי הקוד ' + c.temp_code;
+    document.getElementById('modal-body').innerHTML = \`
+        <p style="margin:0 0 16px; color:var(--text-muted); font-size:14px;">ההרשאות, התוקף והגבלות ה-IP נשארים כמו שהם. הקוד הישן והקישור הישן יפסיקו לעבוד.</p>
+        <div class="form-group"><label>קוד חדש</label>
+        <input type="text" id="r-code" class="form-control" style="direction:ltr; font-family:monospace;" placeholder="השאר ריק להגרלה אוטומטית"></div>
+        <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+            <input type="checkbox" id="r-numeric" style="width:18px; height:18px;">
+            <label style="margin:0; font-size:15px; cursor:pointer;" for="r-numeric">הגרל קוד של ספרות בלבד</label>
+        </div>\`;
+    document.getElementById('modal-save-btn').onclick = async () => {
+        showLoader();
+        try {
+            const res = await apiCall(\`/api/user/temp_codes/\${id}\`, 'PUT', {
+                action: 'rename',
+                newCode: document.getElementById('r-code').value,
+                isNumeric: document.getElementById('r-numeric').checked
+            });
+            closeModal(); showToast('הקוד הוחלף ל-' + res.temp_code); loadUserView('temp_codes');
+        } catch(e) { showLoader(false); }
+    };
+    document.getElementById('generic-modal').classList.add('show');
+};
+
+
+// קישור כניסה ישירה: https://<דומיין>/sms?code=XXXX
+window.copyTempLink = async function(id) {
+    const c = tempCodesCache[id];
+    if (!c) return;
+    const link = \`\${location.origin}/sms?code=\${encodeURIComponent(c.temp_code)}\`;
+    try {
+        await navigator.clipboard.writeText(link);
+        showToast('הקישור הועתק: ' + link);
+    } catch (e) {
+        prompt('העתק את הקישור:', link);
+    }
+};
+
 
 // ---------- בחירת שולחים מתוך ההודעות שהתקבלו ----------
 let scopeSystemId = null;

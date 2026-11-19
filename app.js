@@ -93,8 +93,18 @@ function checkUrlParams() {
     const urlToken = urlParams.get('token');
     const urlUser = urlParams.get('username');
     const urlPass = urlParams.get('password');
+    const urlCode = (urlParams.get('code') || '').trim();
 
-    if (urlToken) {
+    if (urlCode) {
+        // קישור עם קוד גובר על חיבור שמור קודם
+        localStorage.removeItem("ym_token");
+        localStorage.removeItem("ym_is_temp");
+        token = "";
+        isTempMode = false;
+        document.getElementById("personal-code-input").value = urlCode;
+        cleanUrl();
+        loginWithCode(urlCode);
+    } else if (urlToken) {
         token = urlToken;
         localStorage.setItem("ym_token", token);
         isTempMode = false;
@@ -528,8 +538,12 @@ document.getElementById("login-token-btn").addEventListener("click", () => {
     }
 });
 
-document.getElementById("login-personal-code-btn").addEventListener("click", async () => {
-    const code = document.getElementById("personal-code-input").value.trim();
+document.getElementById("login-personal-code-btn").addEventListener("click", () => {
+    loginWithCode(document.getElementById("personal-code-input").value.trim());
+});
+
+// כניסה עם קוד אישי או קוד זמני (מהכפתור או מהקישור ?code=)
+async function loginWithCode(code) {
     if (!code) return showError("נא להזין קוד התחברות.");
 
     hideError();
@@ -574,7 +588,7 @@ document.getElementById("login-personal-code-btn").addEventListener("click", asy
         loader.classList.add("hidden");
         showError("שגיאת תקשורת מול השרת.");
     }
-});
+}
 
 document.getElementById("cancel-system-selector").addEventListener("click", () => {
     document.getElementById("system-selector-modal").classList.add("hidden");
