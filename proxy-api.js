@@ -13,11 +13,10 @@
 // תגובת הצלחה: { ok: true, responseStatus: 'OK', ... }
 // תגובת שגיאה: { ok: false, code: 'ERROR_CODE', error: '...' }  (ראו http.js)
 
-import { ok, fail, normalizePhone, isPermanent, ipAllowed } from './http.js';
+import { ok, fail, normalizePhone, senderKey, isPermanent, ipAllowed } from './http.js';
+import { callYm } from './ym.js';
 import { ensureSchema } from './schema.js';
 
-const YM_API = 'https://www.call2all.co.il/ym/api/';
-const UPSTREAM_TIMEOUT_MS = 15000;
 const DEFAULT_LIMIT = 3000;
 const MAX_LIMIT = 5000;
 const MAX_MESSAGE_LENGTH = 1000;
@@ -106,10 +105,12 @@ async function loadTempCode(request, env) {
     }
     if (!ipAllowed(ip, record.allowed_ips)) return { error: fail('IP_NOT_ALLOWED') };
 
+    // מספרים ושמות שולחים (למשל GOVil) - ההשוואה לפי senderKey
     const phones = String(record.allowed_phones || '')
-        .split(',').map(normalizePhone).filter(Boolean);
+        .split(',').map((p) => p.trim()).filter(Boolean);
+    const keys = phones.map(senderKey);
 
-    return { ctx: { record, phones, restricted: phones.length > 0, ip } };
+    return { ctx: { record, phones, keys, restricted: phones.length > 0, ip } };
 }
 
 function describe(ctx) {
@@ -188,11 +189,14 @@ async function sendSms(ctx, params) {
 
     const phones = [];
     for (const raw of rawPhones) {
+        if (/[a-zA-Zא-ת]/.test(raw)) {
+            return fail('BAD_REQUEST', `לא ניתן לשלוח הודעה לשולח בשם (${raw}) - רק למספר טלפון`, { field: 'phones' });
+        }
         const phone = normalizePhone(raw);
         if (!/^\d{9,12}$/.test(phone) || /[^\d+\-\s()]/.test(raw)) {
             return fail('BAD_REQUEST', `מספר לא תקין: ${raw}`, { field: 'phones' });
         }
-        if (ctx.restricted && !ctx.phones.includes(phone)) {
+        if (ctx.restricted && !ctx.keys.includes(senderKey(phone))) {
             return fail('PHONE_NOT_ALLOWED', `הקוד אינו מורשה לשלוח למספר ${phone}`, { phone });
         }
         phones.push(phone);
@@ -208,44 +212,5 @@ async function sendSms(ctx, params) {
 function filterRows(ctx, rows, getPhone) {
     const list = Array.isArray(rows) ? rows : [];
     if (!ctx.restricted) return list;
-    return list.filter((row) => ctx.phones.includes(normalizePhone(getPhone(row))));
-}
-
-// ------------------------------------------
-//  קריאה לימות המשיח
-// ------------------------------------------
-async function callYm(action, token, params) {
-    const target = new URL(YM_API + action);
-    for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null && value !== '') target.searchParams.set(key, String(value));
-    }
-    target.searchParams.set('token', token);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-    let res, text;
-    try {
-        res = await fetch(target.toString(), { signal: controller.signal });
-        text = await res.text();
-    } catch (e) {
-        return { error: fail(e.name === 'AbortError' ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNREACHABLE') };
-    } finally {
-        clearTimeout(timer);
-    }
-
-    let data;
-    try {
-        data = JSON.parse(text);
-    } catch (e) {
-        return { error: fail('UPSTREAM_BAD_RESPONSE', undefined, { upstreamHttpStatus: res.status }) };
-    }
-
-    if (!data || data.responseStatus !== 'OK') {
-        return {
-            error: fail('UPSTREAM_REJECTED', data?.message ? `ימות המשיח: ${data.message}` : undefined, {
-                upstreamStatus: data?.responseStatus ?? null,
-            }),
-        };
-    }
-    return { data };
+    return list.filter((row) => ctx.keys.includes(senderKey(getPhone(row))));
 }

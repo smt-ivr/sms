@@ -351,7 +351,7 @@ async function loadUserView(view) {
                     <button class="btn-primary" onclick="openTempCodeModal('\${encodeURIComponent(JSON.stringify(systems))}')"><span class="material-symbols-rounded">add</span> הנפק קוד</button>
                 </div>
                 <div class="table-scroll"><table class="compact-table">
-                    <tr><th>קוד זמני</th><th>תיאור</th><th>מערכת מקושרת</th><th>מספרים מורשים</th><th>הגבלת IP</th><th>הרשאות</th><th>תוקף</th><th>שימושים</th><th>סטטוס</th><th>פעולות</th></tr>
+                    <tr><th>קוד זמני</th><th>תיאור</th><th>מערכת מקושרת</th><th>שולחים מורשים</th><th>הגבלת IP</th><th>הרשאות</th><th>תוקף</th><th>שימושים</th><th>סטטוס</th><th>פעולות</th></tr>
                     \${codes.map(c => {
                         const isExpired = Date.now() > c.expires_at;
                         const timeStr = fmtExpiry(c.expires_at);
@@ -372,7 +372,7 @@ async function loadUserView(view) {
                             <td style="font-family:monospace; font-weight:bold; font-size:16px;">\${c.temp_code}</td>
                             <td>\${escapeHtml(c.label || '')}</td>
                             <td>\${escapeHtml(c.system_desc)}</td>
-                            <td style="direction:ltr; font-family:monospace;">\${phones.length ? phones.join('<br>') : '<span class="badge" style="background:#f1f5f9; color:#334155">כל המספרים</span>'}</td>
+                            <td style="direction:ltr; font-family:monospace;">\${phones.length ? phones.map(escapeHtml).join('<br>') : '<span class="badge" style="background:#f1f5f9; color:#334155">הכל</span>'}</td>
                             <td style="direction:ltr; font-family:monospace;">\${ipCell}</td>
                             <td>\${perms.map(p => \`<span class="badge \${p === 'שליחה' ? 'red' : 'green'}" style="margin:2px">\${p}</span>\`).join('')}</td>
                             <td style="direction:ltr">\${timeStr}</td>
@@ -426,6 +426,8 @@ window.openTempCodeModal = function(systemsJson) {
     const systems = JSON.parse(decodeURIComponent(systemsJson));
     if(systems.length === 0) return showToast('אין מערכות מקושרות לחשבון', 'error');
     
+    scopeSystemId = null;
+    sendersCache = [];
     document.getElementById('modal-title').textContent = 'הנפקת קוד זמני חדש';
     document.getElementById('modal-body').innerHTML = \`
         <div class="form-group"><label>בחר מערכת</label>
@@ -460,6 +462,75 @@ window.openTempCodeModal = function(systemsJson) {
 };
 
 const tempCodesCache = {};
+
+// ---------- בחירת שולחים מתוך ההודעות שהתקבלו ----------
+let scopeSystemId = null;
+let sendersCache = [];
+
+function senderKeyClient(v) {
+    const t = String(v || '').trim();
+    if (/\\d/.test(t) && /^[\\d+\\-\\s().]+$/.test(t)) {
+        let d = t.replace(/\\D/g, '');
+        if (d.startsWith('972')) d = '0' + d.substring(3);
+        return d;
+    }
+    return t.toLowerCase();
+}
+
+function currentSenderLines() {
+    return document.getElementById('t-phones').value.split(/[,;\\n]+/).map(x => x.trim()).filter(Boolean);
+}
+
+window.loadSenders = async function() {
+    const sysSelect = document.getElementById('t-system');
+    const systemId = sysSelect ? sysSelect.value : scopeSystemId;
+    if (!systemId) return;
+    const box = document.getElementById('t-senders-box');
+    const list = document.getElementById('t-senders-list');
+    box.style.display = 'block';
+    list.innerHTML = '<div style="padding:14px; color:var(--text-muted)">טוען שולחים...</div>';
+    try {
+        const res = await apiCall(\`/api/user/systems/\${systemId}/senders\`);
+        sendersCache = res.senders || [];
+        renderSenders();
+    } catch (e) {
+        list.innerHTML = \`<div style="padding:14px; color:var(--danger)">\${escapeHtml(e.message)}</div>\`;
+    }
+};
+
+window.renderSenders = function() {
+    const list = document.getElementById('t-senders-list');
+    if (!list) return;
+    const q = document.getElementById('t-senders-search').value.trim().toLowerCase();
+    const selected = new Set(currentSenderLines().map(senderKeyClient));
+    const items = sendersCache.filter(s => !q || s.sender.toLowerCase().includes(q));
+    if (items.length === 0) {
+        list.innerHTML = \`<div style="padding:14px; color:var(--text-muted)">\${sendersCache.length ? 'לא נמצאו תוצאות' : 'לא התקבלו הודעות במערכת זו'}</div>\`;
+        return;
+    }
+    list.innerHTML = items.map(s => {
+        const key = senderKeyClient(s.sender);
+        const date = s.last ? new Date(s.last.replace(' ', 'T')).toLocaleDateString('he-IL') : '';
+        return \`<label style="display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid #f1f5f9; cursor:pointer; margin:0;">
+            <input type="checkbox" data-key="\${escapeHtml(key)}" data-sender="\${escapeHtml(s.sender)}" \${selected.has(key) ? 'checked' : ''} onchange="toggleSender(this)" style="width:16px; height:16px;">
+            <span style="direction:ltr; font-family:monospace; font-weight:600; flex:1; text-align:right;">\${escapeHtml(s.sender)}</span>
+            <span style="font-size:12px; color:var(--text-muted)">\${s.count} הודעות · \${date}</span>
+        </label>\`;
+    }).join('');
+};
+
+window.toggleSender = function(cb) {
+    const key = cb.dataset.key;
+    let lines = currentSenderLines().filter(l => senderKeyClient(l) !== key);
+    if (cb.checked) lines.push(cb.dataset.sender);
+    document.getElementById('t-phones').value = lines.join('\\n');
+};
+
+window.syncSenderChecks = function() {
+    const selected = new Set(currentSenderLines().map(senderKeyClient));
+    document.querySelectorAll('#t-senders-list input[type=checkbox]').forEach(cb => { cb.checked = selected.has(cb.dataset.key); });
+};
+
 let myIp = '';
 const PERMANENT_EXPIRY = 253402300799000;
 
@@ -558,8 +629,15 @@ function tempScopeFields(c) {
         <div class="form-group"><label>תיאור (למי ניתן הקוד) - אופציונלי</label>
         <input type="text" id="t-label" class="form-control" maxlength="100" value="\${escapeHtml(c.label || '')}"></div>
 
-        <div class="form-group"><label>הגבלה למספרים מסוימים (מספר בכל שורה, ריק = כל המספרים)</label>
-        <textarea id="t-phones" class="form-control" rows="3" style="direction:ltr; font-family:monospace;" placeholder="0501234567">\${phones}</textarea></div>
+        <div class="form-group"><label>הגבלה לשולחים / מספרים (אחד בכל שורה, ריק = הכל)</label>
+        <textarea id="t-phones" class="form-control" rows="3" style="direction:ltr; font-family:monospace;" placeholder="0501234567&#10;GOVil" oninput="syncSenderChecks()">\${escapeHtml(phones)}</textarea>
+        <button type="button" class="btn-outline" style="padding:4px 10px; border-radius:8px; margin-top:6px; font-size:13px;" onclick="loadSenders()">
+            <span class="material-symbols-rounded" style="font-size:16px; vertical-align:middle;">contacts</span> בחר מתוך מי ששלח הודעות
+        </button>
+        <div id="t-senders-box" style="display:none; margin-top:10px; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden;">
+            <input type="text" id="t-senders-search" class="form-control" placeholder="חיפוש..." oninput="renderSenders()" style="border:none; border-bottom:1px solid #e2e8f0; border-radius:0;">
+            <div id="t-senders-list" style="max-height:220px; overflow-y:auto;"></div>
+        </div></div>
 
         <label style="display:block; margin-bottom:8px; font-size:14px; font-weight:600;">מה מותר לבעל הקוד</label>
         \${cb('t-allow-in', c.allow_incoming, 'צפייה בהודעות נכנסות')}
@@ -590,6 +668,8 @@ function readTempScopeFields() {
 window.openTempScopeModal = function(id) {
     const c = tempCodesCache[id];
     if (!c) return;
+    scopeSystemId = c.system_id;
+    sendersCache = [];
     document.getElementById('modal-title').textContent = 'הרשאות לקוד ' + c.temp_code;
     document.getElementById('modal-body').innerHTML = tempScopeFields(c);
     document.getElementById('modal-save-btn').onclick = async () => {

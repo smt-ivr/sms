@@ -1,18 +1,30 @@
-import { json, fail, normalizePhone, PERMANENT_EXPIRY, parseIpRule, splitList } from './http.js';
+import { json, fail, normalizePhone, senderKey, isPhoneLike, PERMANENT_EXPIRY, parseIpRule, splitList } from './http.js';
+import { callYm } from './ym.js';
 import { ensureSchema } from './schema.js';
 
 // קריאת הגדרות ההרשאה של קוד זמני מגוף הבקשה
 function parseTempScope(body) {
+    // מספרי טלפון או שמות שולחים (למשל GOVil). שורה / פסיק = הפרדה
     const rawPhones = Array.isArray(body.allowedPhones)
         ? body.allowedPhones
-        : String(body.allowedPhones || '').split(/[,;\s\n]+/);
+        : String(body.allowedPhones || '').split(/[,;\n]+/);
     const phones = [];
+    const keys = new Set();
     for (const raw of rawPhones.map(p => String(p).trim()).filter(Boolean)) {
-        const phone = normalizePhone(raw);
-        if (!/^\d{9,12}$/.test(phone)) return { error: fail('BAD_REQUEST', `מספר טלפון לא תקין: ${raw}`, { field: 'allowedPhones' }) };
-        if (!phones.includes(phone)) phones.push(phone);
+        let value;
+        if (isPhoneLike(raw)) {
+            value = normalizePhone(raw);
+            if (!/^\d{3,15}$/.test(value)) return { error: fail('BAD_REQUEST', `מספר טלפון לא תקין: ${raw}`, { field: 'allowedPhones' }) };
+        } else {
+            value = raw.replace(/\s+/g, ' ');
+            if (value.length > 30 || /[\u0000-\u001f]/.test(value)) {
+                return { error: fail('BAD_REQUEST', `שם שולח לא תקין (עד 30 תווים): ${raw}`, { field: 'allowedPhones' }) };
+            }
+        }
+        const key = senderKey(value);
+        if (!keys.has(key)) { keys.add(key); phones.push(value); }
     }
-    if (phones.length > 50) return { error: fail('BAD_REQUEST', 'ניתן להגביל עד 50 מספרים לקוד', { field: 'allowedPhones' }) };
+    if (phones.length > 50) return { error: fail('BAD_REQUEST', 'ניתן להגביל עד 50 שולחים לקוד', { field: 'allowedPhones' }) };
 
     const ips = [];
     for (const rule of splitList(body.allowedIps)) {
@@ -161,6 +173,27 @@ export default async function handleAdminApi(request, env) {
         // ==========================================
         if (path.includes('/api/user')) {
             if (method === 'GET') {
+                // רשימת השולחים שכתבו למערכת - לבחירה בהגבלת קוד זמני
+                const sendersMatch = path.match(/\/api\/user\/systems\/(\d+)\/senders$/);
+                if (sendersMatch) {
+                    const sys = await env.DB.prepare('SELECT token FROM system_tokens WHERE id = ? AND code_id = ?').bind(sendersMatch[1], currentUser.id).first();
+                    if (!sys) return fail('NOT_FOUND', 'המערכת לא נמצאה בחשבון שלך');
+                    const res = await callYm('GetIncomingSms', sys.token, { limit: 3000 });
+                    if (res.error) return res.error;
+                    const map = new Map();
+                    for (const row of res.data.rows || []) {
+                        const raw = String(row.source ?? '').trim();
+                        if (!raw) continue;
+                        const sender = isPhoneLike(raw) ? normalizePhone(raw) : raw;
+                        const key = senderKey(sender);
+                        const item = map.get(key) || { sender, count: 0, last: '' };
+                        item.count++;
+                        if (String(row.receive_date || '') > item.last) item.last = String(row.receive_date || '');
+                        map.set(key, item);
+                    }
+                    const senders = [...map.values()].sort((a, b) => (a.last < b.last ? 1 : -1));
+                    return json({ ok: true, count: senders.length, senders });
+                }
                 if (path.endsWith('/data')) {
                     const systems = await env.DB.prepare('SELECT id, description, token FROM system_tokens WHERE code_id = ? ORDER BY id DESC').bind(currentUser.id).all();
                     return json({ user: currentUser, systems: systems.results, client_ip: request.headers.get('CF-Connecting-IP') || '' });

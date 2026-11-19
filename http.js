@@ -67,6 +67,16 @@ export function normalizePhone(phone) {
     return cleaned;
 }
 
+// מזהה שולח להשוואה: מספר -> 05XXXXXXXX, שם (GOVil) -> אותיות קטנות
+export function isPhoneLike(value) {
+    const t = String(value ?? '').trim();
+    return /\d/.test(t) && /^[\d+\-\s().]+$/.test(t);
+}
+export function senderKey(value) {
+    const t = String(value ?? '').trim();
+    return isPhoneLike(t) ? normalizePhone(t) : t.toLowerCase();
+}
+
 // ==========================================
 //  תוקף
 // ==========================================

@@ -345,15 +345,17 @@ function processMessages(inboxRows, outboxRows) {
         conversations[contact].sort((a, b) => new Date(a.time.replace(" ", "T")) - new Date(b.time.replace(" ", "T")));
     }
     // קוד זמני המוגבל לכמה מספרים - מציגים אותם תמיד ברשימה גם בלי הודעות
+    // (השוואה ללא תלות באותיות גדולות/קטנות - למשל GOVil / govil)
+    const findContact = (p) => Object.keys(conversations).find(k => k.toLowerCase() === normalizePhone(p).toLowerCase());
     if (isTempMode && tempInfo && tempInfo.restricted) {
-        tempInfo.phones.forEach(p => { if (!conversations[p]) conversations[p] = []; });
+        tempInfo.phones.forEach(p => { if (!findContact(p)) conversations[normalizePhone(p)] = []; });
     }
     renderContacts();
     if (activeContact && conversations[activeContact]) {
         renderChat(activeContact, true);
     } else if (!activeContact && isTempMode && tempInfo && tempInfo.restricted && tempInfo.phones.length === 1) {
         // מספר יחיד - פותחים את השיחה ישירות
-        activeContact = tempInfo.phones[0];
+        activeContact = findContact(tempInfo.phones[0]) || normalizePhone(tempInfo.phones[0]);
         renderContacts();
         renderChat(activeContact);
         if (window.innerWidth <= 768) {
@@ -405,8 +407,10 @@ function renderContacts() {
 
 function renderChat(contact, preserveScroll = false) {
     chatTitleEl.textContent = contact;
-    chatPhoneEl.textContent = canTemp("send") ? "הודעות SMS" : "הודעות SMS · צפייה בלבד";
-    chatInputArea.classList.toggle("hidden", !canTemp("send"));
+    // לשולח בשם (למשל GOVil) אי אפשר להשיב
+    const canReply = canTemp("send") && !/[a-zA-Zא-ת]/.test(contact);
+    chatPhoneEl.textContent = canReply ? "הודעות SMS" : "הודעות SMS · צפייה בלבד";
+    chatInputArea.classList.toggle("hidden", !canReply);
     const msgs = conversations[contact] || [];
     const isAtBottom = chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop <= chatMessagesEl.clientHeight + 50;
 
