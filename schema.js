@@ -34,7 +34,51 @@ export function ensureSchema(env) {
     return schemaReady;
 }
 
+// טבלאות חדשות
+//   mail_log    - מיילים שנשלחו עם קוד זמני: מתי נפתחו ומתי לחצו על הקישור
+//   sms_notify  - הרשמות לקבלת מייל על כל SMS נכנס (דורשות אישור מהמייל)
+const TABLES = [
+    `CREATE TABLE IF NOT EXISTS mail_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code_id INTEGER NOT NULL,
+        temp_code_id INTEGER NOT NULL,
+        to_email TEXT NOT NULL,
+        sent_code TEXT NOT NULL DEFAULT '',
+        recipient_name TEXT NOT NULL DEFAULT '',
+        token TEXT NOT NULL UNIQUE,
+        resend_id TEXT NOT NULL DEFAULT '',
+        sent_at INTEGER NOT NULL,
+        opened_at INTEGER,
+        last_opened_at INTEGER,
+        open_count INTEGER NOT NULL DEFAULT 0,
+        clicked_at INTEGER,
+        last_clicked_at INTEGER,
+        click_count INTEGER NOT NULL DEFAULT 0
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_mail_log_temp ON mail_log(temp_code_id)',
+    `CREATE TABLE IF NOT EXISTS sms_notify (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code_id INTEGER NOT NULL,
+        system_id INTEGER NOT NULL,
+        email TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        confirm_token TEXT NOT NULL UNIQUE,
+        unsub_token TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        confirmed_at INTEGER,
+        last_seen TEXT,
+        last_keys TEXT NOT NULL DEFAULT '[]',
+        last_checked_at INTEGER,
+        last_sent_at INTEGER,
+        sent_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT NOT NULL DEFAULT ''
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_sms_notify_status ON sms_notify(status)',
+];
+
 async function migrate(env) {
+    for (const sql of TABLES) await env.DB.prepare(sql).run();
+
     const { results } = await env.DB.prepare('PRAGMA table_info(temp_codes)').all();
     const existing = new Set((results || []).map((c) => c.name));
     for (const [name, def] of TEMP_CODE_COLUMNS) {

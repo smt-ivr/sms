@@ -38,7 +38,8 @@ const C = {
 // ------------------------------------------
 //  תבנית מייל: גישה עם קוד זמני
 // ------------------------------------------
-export function tempCodeMail({ code, link, recipientName, senderName, message, phones, permissions, expiresAt }) {
+export function tempCodeMail({ code, link, clickUrl, pixelUrl, recipientName, senderName, message, phones, permissions, expiresAt }) {
+    const href = clickUrl || link; // הקישור בכפתור עובר דרך מונה הלחיצות
     const fmtDate = (ms) => new Date(ms).toLocaleString('he-IL', {
         timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
@@ -97,7 +98,7 @@ export function tempCodeMail({ code, link, recipientName, senderName, message, p
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 26px"><tr><td align="center">
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
           <td style="border-radius:12px;background:${C.primary};box-shadow:0 6px 16px rgba(37,99,235,.35)" bgcolor="${C.primary}">
-            <a href="${esc(link)}" style="display:inline-block;padding:15px 42px;font-size:17px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:12px;font-family:${FONT}">כניסה ישירה להודעות ←</a>
+            <a href="${esc(href)}" style="display:inline-block;padding:15px 42px;font-size:17px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:12px;font-family:${FONT}">כניסה ישירה להודעות ←</a>
           </td></tr></table>
       </td></tr></table>
 
@@ -110,7 +111,7 @@ export function tempCodeMail({ code, link, recipientName, senderName, message, p
 
       <div style="margin-top:18px;padding:12px 16px;border-radius:10px;background:#f8fafc;border:1px solid ${C.border};font-size:13px;color:${C.muted};line-height:1.7">
         הכפתור לא עובד? העתיקו לדפדפן את הכתובת:<br>
-        <a href="${esc(link)}" dir="ltr" style="color:${C.primary};word-break:break-all">${esc(link)}</a><br>
+        <a href="${esc(href)}" dir="ltr" style="color:${C.primary};word-break:break-all">${esc(link)}</a><br>
         הקוד אישי - אל תעבירו אותו לאחרים.
       </div>
     </td></tr>
@@ -118,11 +119,11 @@ export function tempCodeMail({ code, link, recipientName, senderName, message, p
     <tr><td style="background:#f8fafc;border:1px solid ${C.border};border-top:0;border-radius:0 0 18px 18px;padding:14px 30px;text-align:center;font-size:12px;color:${C.muted}">
       נשלח ממערכת S.M.T · smti.uk</td></tr>
   </table>
-</td></tr></table></body></html>`;
+</td></tr></table>${pixelUrl ? `<img src="${esc(pixelUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;opacity:0">` : ''}</body></html>`;
 
     const text = [
         'קיבלת גישה להודעות', greeting, intro, message || '',
-        `קוד הגישה: ${code}`, `כניסה ישירה: ${link}`,
+        `קוד הגישה: ${code}`, `כניסה ישירה: ${href}`,
         `הודעות של: ${scopeText}`, `תוקף: ${expiryText}`,
         `הרשאות: ${permList.filter(([, on]) => on).map(([l]) => l).join(', ')}`,
     ].filter(Boolean).join('\n\n');
@@ -134,7 +135,7 @@ export function tempCodeMail({ code, link, recipientName, senderName, message, p
 //  שליחה
 // ------------------------------------------
 // מחזיר { ok: true, id } או { ok: false, status, error }
-export async function sendMail(env, { to, subject, html, text, fromName }) {
+export async function sendMail(env, { to, subject, html, text, fromName, headers }) {
     const key = await getMailKey(env);
     if (!key) return { ok: false, status: 409, error: 'מפתח המייל (Resend) לא מוגדר' };
     const name = String(fromName || FROM_NAME).replace(/["<>\r\n]/g, '').slice(0, 60);
@@ -143,7 +144,7 @@ export async function sendMail(env, { to, subject, html, text, fromName }) {
         res = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: `${name} <${FROM_ADDRESS}>`, to: [to], subject, html, text }),
+            body: JSON.stringify({ from: `${name} <${FROM_ADDRESS}>`, to: [to], subject, html, text, ...(headers ? { headers } : {}) }),
         });
     } catch (e) {
         return { ok: false, status: 502, error: 'אין תקשורת עם שרת המייל' };
@@ -155,4 +156,97 @@ export async function sendMail(env, { to, subject, html, text, fromName }) {
         return { ok: false, status: 502, error: `שליחת המייל נכשלה${data.message ? ': ' + data.message : ''}` };
     }
     return { ok: true, id: data.id };
+}
+
+// ------------------------------------------
+//  מעטפת משותפת למיילים הקצרים (אישור הרשמה / התראת SMS)
+// ------------------------------------------
+function shell({ title, preheader, inner, footer }) {
+    return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)}</title></head>
+<body style="margin:0;padding:0;background:${C.bg};font-family:${FONT}" dir="rtl">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.bg}"><tr><td align="center" style="padding:32px 12px">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px">
+    <tr><td style="background:${C.dark};background-image:linear-gradient(135deg,#1e3a8a 0%,#0f172a 70%);border-radius:18px 18px 0 0;padding:22px 30px" bgcolor="${C.dark}">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="width:42px"><table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td style="width:42px;height:42px;border-radius:11px;background:#ffffff;text-align:center;vertical-align:middle"><img src="${LOGO}" alt="" width="31" style="width:31px;height:auto;border:0;vertical-align:middle"></td>
+        </tr></table></td>
+        <td style="padding-right:14px;font-family:${FONT}">
+          <div style="font-size:19px;font-weight:800;color:#ffffff">S.M.T Systems</div>
+          <div style="font-size:13px;color:#93c5fd">מערכת הודעות SMS</div></td>
+      </tr></table></td></tr>
+    <tr><td style="background:${C.card};border:1px solid ${C.border};border-top:0;padding:30px" dir="rtl">
+      <h1 style="margin:0 0 16px;font-size:22px;line-height:1.4;color:${C.text};font-family:${FONT}">${esc(title)}</h1>
+      ${inner}
+    </td></tr>
+    <tr><td style="background:#f8fafc;border:1px solid ${C.border};border-top:0;border-radius:0 0 18px 18px;padding:14px 30px;text-align:center;font-size:12px;color:${C.muted};line-height:1.8">
+      ${footer || 'נשלח ממערכת S.M.T · smti.uk'}</td></tr>
+  </table>
+</td></tr></table></body></html>`;
+}
+
+const button = (url, label) => `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0 18px"><tr>
+    <td style="border-radius:12px;background:${C.primary}" bgcolor="${C.primary}">
+    <a href="${esc(url)}" style="display:inline-block;padding:13px 34px;font-size:16px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:12px;font-family:${FONT}">${esc(label)}</a></td></tr></table>`;
+
+const fmtSmsDate = (d) => {
+    const t = new Date(String(d || '').replace(' ', 'T'));
+    return isNaN(t) ? String(d || '') : t.toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+// מייל אישור הרשמה להתראות
+export function notifyConfirmMail({ systemName, confirmUrl, ownerName }) {
+    const subject = 'אישור קבלת התראות על הודעות SMS';
+    const inner = `
+      <p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:${C.body}">שלום${ownerName ? ' ' + esc(ownerName) : ''},<br>
+      ביקשת לקבל מייל על כל הודעת SMS שמגיעה למערכת <b>${esc(systemName)}</b>.<br>
+      כדי להתחיל לקבל את ההתראות, יש לאשר את כתובת המייל:</p>
+      ${button(confirmUrl, 'אישור קבלת התראות ✓')}
+      <div style="padding:12px 16px;border-radius:10px;background:#f8fafc;border:1px solid ${C.border};font-size:13px;color:${C.muted};line-height:1.7">
+        לא ביקשת את זה? אפשר להתעלם מהמייל, ולא יישלחו התראות.</div>`;
+    return {
+        subject,
+        html: shell({ title: 'אישור קבלת התראות', preheader: `התראות על SMS למערכת ${systemName}`, inner }),
+        text: `${subject}\n\nביקשת לקבל מייל על כל הודעת SMS שמגיעה למערכת ${systemName}.\nלאישור: ${confirmUrl}\n\nלא ביקשת? אפשר להתעלם מהמייל.`,
+    };
+}
+
+// מייל התראה על SMS נכנס (הודעה אחת או כמה)
+export function smsNotifyMail({ systemName, messages, openUrl, unsubUrl }) {
+    const many = messages.length > 1;
+    const first = messages[0];
+    const subject = many
+        ? `${messages.length} הודעות SMS חדשות · ${systemName}`
+        : `SMS חדש מ-${first.source} · ${systemName}`;
+    const card = (m) => `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px;background:${C.soft};border:1px solid #dbeafe;border-radius:12px"><tr><td style="padding:14px 18px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td dir="ltr" align="right" style="font-family:'SFMono-Regular',Consolas,monospace;font-size:15px;font-weight:800;color:${C.dark}">${esc(m.source)}</td>
+          <td align="left" style="font-size:12px;color:${C.muted};white-space:nowrap">${esc(fmtSmsDate(m.receive_date))}</td>
+        </tr></table>
+        <div style="margin-top:8px;font-size:16px;line-height:1.7;color:${C.text};white-space:pre-line;word-break:break-word">${esc(m.message)}</div>
+      </td></tr></table>`;
+    const inner = `
+      <p style="margin:0 0 16px;font-size:15px;color:${C.muted}">מערכת: <b style="color:${C.text}">${esc(systemName)}</b></p>
+      ${messages.map(card).join('')}
+      ${button(openUrl, 'פתיחה במערכת ההודעות')}`;
+    const footer = `קיבלת מייל זה כי אישרת התראות על הודעות SMS · <a href="${esc(unsubUrl)}" style="color:${C.muted}">הפסקת ההתראות</a>`;
+    return {
+        subject,
+        html: shell({ title: many ? `${messages.length} הודעות חדשות` : 'הודעה חדשה', preheader: `${first.source}: ${String(first.message || '').slice(0, 90)}`, inner, footer }),
+        text: messages.map((m) => `${m.source} · ${fmtSmsDate(m.receive_date)}\n${m.message}`).join('\n\n---\n\n') + `\n\nפתיחה: ${openUrl}\nהפסקת ההתראות: ${unsubUrl}`,
+        headers: { 'List-Unsubscribe': `<${unsubUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
+    };
+}
+
+// דף תוצאה קטן (אישור / ביטול הרשמה)
+export function resultPage(title, text, ok = true) {
+    return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head>
+<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:${C.bg};font-family:${FONT};padding:16px;box-sizing:border-box">
+<div style="max-width:420px;width:100%;background:#fff;border:1px solid ${C.border};border-radius:18px;padding:34px 28px;text-align:center;box-shadow:0 10px 30px rgba(15,23,42,.08)">
+  <div style="width:64px;height:64px;margin:0 auto 16px;border-radius:50%;background:${ok ? C.greenSoft : C.redSoft};color:${ok ? C.green : C.red};font-size:32px;line-height:64px;font-weight:800">${ok ? '✓' : '!'}</div>
+  <h1 style="margin:0 0 10px;font-size:22px;color:${C.text}">${esc(title)}</h1>
+  <p style="margin:0;font-size:15px;line-height:1.7;color:${C.body}">${esc(text)}</p>
+</div></body></html>`;
 }

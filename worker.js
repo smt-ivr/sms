@@ -9,11 +9,23 @@ import adminHtmlContent from './admin-html.js';
 import adminCssContent from './admin-css.js';
 import adminAppJsContent from './admin-app.js';
 import { fail } from './http.js';
+import { handleTracking } from './tracking.js';
+import { handleNotifyLinks, runNotifications } from './notify.js';
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // מעקב מיילים (פתיחה / לחיצה) וקישורי אישור / ביטול התראות
+    if (path.startsWith('/sms/t/')) {
+      const res = await handleTracking(request, env, path, url);
+      if (res) return res;
+    }
+    if (path.startsWith('/sms/n/')) {
+      const res = await handleNotifyLinks(request, env, path);
+      if (res) return res;
+    }
 
     // ניתוב ל-Proxy (תומך בנתיב המלא)
     if (path.startsWith('/sms/api/proxy/') || path.startsWith('/api/proxy/')) {
@@ -80,5 +92,10 @@ export default {
 
     if (path.includes('/api/')) return fail('NOT_FOUND');
     return new Response('404 Not Found (Path: ' + path + ')', { status: 404 });
+  },
+
+  // כל דקה: בדיקת הודעות SMS חדשות ושליחת התראות במייל
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runNotifications(env).catch((e) => console.error('Notify cron error:', e)));
   },
 };

@@ -1,4 +1,5 @@
-import { json, fail, normalizePhone, senderKey, isPhoneLike, PERMANENT_EXPIRY, parseIpRule, splitList } from './http.js';
+import { json, fail, normalizePhone, senderKey, isPhoneLike, PERMANENT_EXPIRY, parseIpRule, splitList, randomToken } from './http.js';
+import { handleNotifyApi } from './notify.js';
 import { callYm } from './ym.js';
 import { tempCodeMail, sendMail, validEmail } from './mail.js';
 import { ensureSchema } from './schema.js';
@@ -173,7 +174,16 @@ export default async function handleAdminApi(request, env) {
         //  API עבור משתמשים (User Portal)
         // ==========================================
         if (path.includes('/api/user')) {
+            if (path.includes('/api/user/notify')) return await handleNotifyApi(request, env, currentUser, url);
             if (method === 'GET') {
+                // היסטוריית המיילים של קוד: מתי נפתח ומתי לחצו
+                const historyMatch = path.match(/\/api\/user\/temp_codes\/(\d+)\/emails$/);
+                if (historyMatch) {
+                    const { results } = await env.DB.prepare(`SELECT id, to_email, recipient_name, sent_at, opened_at, last_opened_at, open_count,
+                        clicked_at, last_clicked_at, click_count FROM mail_log WHERE temp_code_id = ? AND code_id = ? ORDER BY id DESC LIMIT 50`)
+                        .bind(historyMatch[1], currentUser.id).all();
+                    return json({ ok: true, emails: results });
+                }
                 // רשימת השולחים שכתבו למערכת - לבחירה בהגבלת קוד זמני
                 const sendersMatch = path.match(/\/api\/user\/systems\/(\d+)\/senders$/);
                 if (sendersMatch) {
@@ -211,7 +221,10 @@ export default async function handleAdminApi(request, env) {
                     if (!currentUser.allow_temp_codes) return json({error: 'אין הרשאה'}, {status: 403});
                     const { results } = await env.DB.prepare(`
                         SELECT t.*, s.description as system_desc, 
-                        (SELECT COUNT(*) FROM temp_access_logs WHERE temp_code_id = t.id) as usage_count
+                        (SELECT COUNT(*) FROM temp_access_logs WHERE temp_code_id = t.id) as usage_count,
+                        (SELECT COUNT(*) FROM mail_log WHERE temp_code_id = t.id) as mail_count,
+                        (SELECT COUNT(*) FROM mail_log WHERE temp_code_id = t.id AND opened_at IS NOT NULL) as mail_opened,
+                        (SELECT COUNT(*) FROM mail_log WHERE temp_code_id = t.id AND clicked_at IS NOT NULL) as mail_clicked
                         FROM temp_codes t JOIN system_tokens s ON t.system_id = s.id 
                         WHERE t.code_id = ? ORDER BY t.id DESC
                     `).bind(currentUser.id).all();
@@ -230,10 +243,15 @@ export default async function handleAdminApi(request, env) {
                     const to = String(body.to || '').trim().toLowerCase();
                     if (!body.preview && !validEmail(to)) return fail('BAD_REQUEST', 'כתובת המייל אינה תקינה', { field: 'to' });
 
+                    // במייל אמיתי - קישור ופיקסל מעקב (פתיחה / לחיצה). בתצוגה מקדימה - בלי מעקב
+                    const trackToken = body.preview ? null : randomToken();
+                    const recipientName = String(body.name || '').trim().slice(0, 60);
                     const mail = tempCodeMail({
                         code: tc.temp_code,
                         link: `${url.origin}/sms?code=${encodeURIComponent(tc.temp_code)}`,
-                        recipientName: String(body.name || '').trim().slice(0, 60),
+                        clickUrl: trackToken ? `${url.origin}/sms/t/c/${trackToken}` : null,
+                        pixelUrl: trackToken ? `${url.origin}/sms/t/o/${trackToken}.gif` : null,
+                        recipientName,
                         senderName: currentUser.owner_name,
                         message: String(body.message || '').trim().slice(0, 1000),
                         phones: String(tc.allowed_phones || '').split(',').filter(Boolean),
@@ -247,6 +265,8 @@ export default async function handleAdminApi(request, env) {
                     }
                     const sent = await sendMail(env, { to, ...mail, fromName: `${currentUser.owner_name} · S.M.T` });
                     if (!sent.ok) return fail(sent.status === 409 ? 'MAIL_NOT_CONFIGURED' : 'MAIL_FAILED', sent.error);
+                    await env.DB.prepare(`INSERT INTO mail_log (code_id, temp_code_id, to_email, sent_code, recipient_name, token, resend_id, sent_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(currentUser.id, tc.id, to, tc.temp_code, recipientName, trackToken, sent.id || '', Date.now()).run();
                     return json({ ok: true, success: true, to });
                 }
                 if (path.endsWith('/systems')) {
@@ -355,6 +375,7 @@ export default async function handleAdminApi(request, env) {
             if (method === 'DELETE') {
                 if (path.includes('/systems/')) {
                     const id = path.split('/').pop();
+                    await env.DB.prepare('DELETE FROM sms_notify WHERE system_id = ? AND code_id = ?').bind(id, currentUser.id).run().catch(() => {});
                     await env.DB.prepare('DELETE FROM temp_access_logs WHERE temp_code_id IN (SELECT id FROM temp_codes WHERE system_id = ? AND code_id = ?)').bind(id, currentUser.id).run();
                     await env.DB.prepare('DELETE FROM temp_codes WHERE system_id = ? AND code_id = ?').bind(id, currentUser.id).run();
                     await env.DB.prepare('DELETE FROM system_tokens WHERE id=? AND code_id=?').bind(id, currentUser.id).run();

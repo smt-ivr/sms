@@ -153,6 +153,7 @@ function initUserApp(user) {
         <div class="menu-item" onclick="loadUserView('systems')"><span class="material-symbols-rounded">dns</span> המערכות שלי</div>
         <div class="menu-item" onclick="loadUserView('logs')"><span class="material-symbols-rounded">history</span> היסטוריית כניסות</div>
         \${user.allow_temp_codes ? \`<div class="menu-item" onclick="loadUserView('temp_codes')"><span class="material-symbols-rounded">timer</span> קודים זמניים (Proxy)</div>\` : ''}
+        <div class="menu-item" onclick="loadUserView('notify')"><span class="material-symbols-rounded">notifications_active</span> התראות במייל</div>
     \`;
     loadUserView('systems');
 }
@@ -338,6 +339,10 @@ async function loadUserView(view) {
         </table></div>\`;
     }
 
+    if(view === 'notify') {
+        await renderNotifyView(container);
+    }
+
     if(view === 'temp_codes') {
         setTopbar('ניהול קודים זמניים', 'timer');
         const codes = await apiCall('/api/user/temp_codes');
@@ -369,7 +374,7 @@ async function loadUserView(view) {
                         ].filter(Boolean);
                         tempCodesCache[c.id] = c;
                         return \`<tr>
-                            <td style="font-family:monospace; font-weight:bold; font-size:16px;">\${c.temp_code}</td>
+                            <td style="font-family:monospace; font-weight:bold; font-size:16px;">\${c.temp_code}\${mailStatusLine(c)}</td>
                             <td>\${escapeHtml(c.label || '')}</td>
                             <td>\${escapeHtml(c.system_desc)}</td>
                             <td style="direction:ltr; font-family:monospace;">\${phones.length ? phones.map(escapeHtml).join('<br>') : '<span class="badge" style="background:#f1f5f9; color:#334155">הכל</span>'}</td>
@@ -466,6 +471,120 @@ window.openTempCodeModal = function(systemsJson) {
 
 const tempCodesCache = {};
 
+// ---------- מעקב מיילים ----------
+const fmtTime = (ms) => ms ? new Date(ms).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+
+function mailStatusLine(c) {
+    if (!c.mail_count) return '';
+    const parts = [\`\${c.mail_count} נשלחו\`];
+    parts.push(c.mail_opened ? \`<span style="color:var(--success)">\${c.mail_opened} נפתחו</span>\` : 'לא נפתח');
+    if (c.mail_clicked) parts.push(\`<span style="color:var(--primary)">\${c.mail_clicked} לחצו</span>\`);
+    return \`<div style="font-family:inherit; font-size:12px; font-weight:500; color:var(--text-muted); margin-top:4px; cursor:pointer;" onclick="openTempEmailModal(\${c.id})">
+        <span class="material-symbols-rounded" style="font-size:14px; vertical-align:middle;">mail</span> \${parts.join(' · ')}</div>\`;
+}
+
+async function loadMailHistory(id) {
+    const box = document.getElementById('e-history');
+    if (!box) return;
+    try {
+        const res = await apiCall(\`/api/user/temp_codes/\${id}/emails\`);
+        if (!res.emails.length) return;
+        const badge = (on, onText, offText, color) => on
+            ? \`<span class="badge" style="background:\${color === 'blue' ? '#dbeafe' : '#d1fae5'}; color:\${color === 'blue' ? '#1d4ed8' : '#059669'}">\${onText}</span>\`
+            : \`<span class="badge" style="background:#f1f5f9; color:#64748b">\${offText}</span>\`;
+        box.innerHTML = \`
+            <label style="display:block; margin-bottom:8px; font-size:14px; font-weight:600;">מיילים שנשלחו</label>
+            <div style="border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; margin-bottom:20px; max-height:200px; overflow-y:auto;">
+            \${res.emails.map(m => \`
+                <div style="padding:10px 14px; border-bottom:1px solid #f1f5f9; display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px;">
+                    <div style="flex:1; min-width:160px;">
+                        <div style="direction:ltr; text-align:right; font-weight:700; font-size:14px;">\${escapeHtml(m.to_email)}</div>
+                        <div style="font-size:12px; color:var(--text-muted)">נשלח \${fmtTime(m.sent_at)}</div>
+                    </div>
+                    <span title="\${m.opened_at ? 'נפתח לראשונה ' + fmtTime(m.opened_at) + (m.open_count > 1 ? ' · ' + m.open_count + ' פעמים' : '') : ''}">
+                        \${badge(m.opened_at, '👁 נפתח ' + fmtTime(m.opened_at), 'לא נפתח')}</span>
+                    <span title="\${m.clicked_at ? 'לחיצה ראשונה ' + fmtTime(m.clicked_at) + (m.click_count > 1 ? ' · ' + m.click_count + ' לחיצות' : '') : ''}">
+                        \${badge(m.clicked_at, '🔗 לחץ ' + fmtTime(m.clicked_at), 'לא לחץ', 'blue')}</span>
+                </div>\`).join('')}
+            </div>\`;
+    } catch (e) { /* לא קריטי */ }
+}
+
+// ---------- התראות במייל על SMS נכנס ----------
+async function renderNotifyView(container) {
+    setTopbar('התראות במייל על הודעות נכנסות', 'notifications_active');
+    const [{ subscriptions }, { systems }] = await Promise.all([apiCall('/api/user/notify'), apiCall('/api/user/data')]);
+    const statusBadge = (s) => ({
+        pending: '<span class="badge" style="background:#fef3c7; color:#92400e">ממתין לאישור במייל</span>',
+        active: '<span class="badge green">פעיל</span>',
+        paused: '<span class="badge" style="background:#f1f5f9; color:#64748b">מושהה</span>',
+    }[s] || s);
+    container.innerHTML = \`
+        <div class="card">
+            <div class="card-header">
+                <h3>קבלת מייל על כל SMS שמגיע</h3>
+                <button class="btn-primary" onclick="openNotifyModal()"><span class="material-symbols-rounded">add_alert</span> הוסף התראה</button>
+            </div>
+            <div style="padding:16px 30px; color:var(--text-muted); font-size:14px; line-height:1.7; border-bottom:1px solid var(--border);">
+                אחרי ההוספה נשלח מייל אישור. ההתראות מתחילות רק אחרי לחיצה על "אישור" במייל. הבדיקה נעשית כל דקה, ובכל מייל יש קישור להפסקה.
+            </div>
+            <div class="table-scroll"><table class="compact-table">
+                <tr><th>מערכת</th><th>מייל</th><th>סטטוס</th><th>בדיקה אחרונה</th><th>התראות שנשלחו</th><th>פעולות</th></tr>
+                \${subscriptions.map(n => \`<tr>
+                    <td style="font-weight:bold;">\${escapeHtml(n.system_desc)}</td>
+                    <td style="direction:ltr; text-align:right;">\${escapeHtml(n.email)}</td>
+                    <td>\${statusBadge(n.status)}\${n.last_error ? \`<div style="font-size:12px; color:var(--danger); margin-top:4px;">\${escapeHtml(n.last_error)}</div>\` : ''}</td>
+                    <td style="direction:ltr; text-align:right;">\${fmtTime(n.last_checked_at) || '—'}</td>
+                    <td>\${n.sent_count}\${n.last_sent_at ? \`<div style="font-size:12px; color:var(--text-muted)">אחרונה \${fmtTime(n.last_sent_at)}</div>\` : ''}</td>
+                    <td>
+                        \${n.status === 'pending' ? \`<button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageNotify(\${n.id}, 'resend')">שלח אישור שוב</button>\` : ''}
+                        \${n.status === 'active' ? \`<button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageNotify(\${n.id}, 'pause')">השהה</button>\` : ''}
+                        \${n.status === 'paused' ? \`<button class="btn-outline" style="padding:6px; border-radius:8px;" onclick="manageNotify(\${n.id}, 'resume')">חדש</button>\` : ''}
+                        <button class="btn-outline" style="padding:6px; border-radius:8px; border-color:var(--danger); color:var(--danger);" onclick="manageNotify(\${n.id}, 'delete')">מחק</button>
+                    </td>
+                </tr>\`).join('')}
+                \${subscriptions.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-muted)">עדיין לא הוגדרו התראות</td></tr>' : ''}
+            </table></div>
+        </div>\`;
+    notifySystems = systems;
+}
+
+let notifySystems = [];
+
+window.openNotifyModal = function() {
+    if (!notifySystems.length) return showToast('אין מערכות מקושרות לחשבון', 'error');
+    document.getElementById('modal-title').textContent = 'הוספת התראה במייל';
+    document.getElementById('modal-body').innerHTML = \`
+        <div class="form-group"><label>מערכת</label>
+        <select id="n-system" class="form-control">\${notifySystems.map(s => \`<option value="\${s.id}">\${escapeHtml(s.description)}</option>\`).join('')}</select></div>
+        <div class="form-group"><label>כתובת מייל לקבלת ההתראות</label>
+        <input type="email" id="n-email" class="form-control" style="direction:ltr;" placeholder="name@example.com"></div>
+        <p style="margin:0; font-size:13px; color:var(--text-muted)">יישלח מייל אישור לכתובת הזו. ההתראות יתחילו רק אחרי האישור.</p>\`;
+    document.getElementById('modal-save-btn').onclick = async () => {
+        const email = document.getElementById('n-email').value.trim();
+        if (!isValidEmail(email)) return showToast('כתובת המייל אינה תקינה', 'error');
+        showLoader(true, 'שולח מייל אישור...');
+        try {
+            await apiCall('/api/user/notify', 'POST', { systemId: document.getElementById('n-system').value, email });
+            closeModal(); showToast('נשלח מייל אישור אל ' + email); loadUserView('notify');
+        } catch (e) { showLoader(false); loadUserView('notify'); }
+    };
+    document.getElementById('generic-modal').classList.add('show');
+    setTimeout(() => document.getElementById('n-email').focus(), 100);
+};
+
+window.manageNotify = async function(id, action) {
+    if (action === 'delete' && !confirm('למחוק את ההתראה?')) return;
+    showLoader();
+    try {
+        if (action === 'delete') await apiCall(\`/api/user/notify/\${id}\`, 'DELETE');
+        else await apiCall(\`/api/user/notify/\${id}\`, 'PUT', { action });
+        if (action === 'resend') showToast('מייל האישור נשלח שוב');
+    } catch (e) {}
+    loadUserView('notify');
+};
+
+
 // ---------- שליחת הקוד במייל מעוצב ----------
 let mailPreviewTimer = null;
 
@@ -480,6 +599,7 @@ window.openTempEmailModal = function(id) {
         <input type="text" id="e-name" class="form-control" maxlength="60" value="\${escapeHtml(c.label || '')}" oninput="scheduleMailPreview(\${id})"></div>
         <div class="form-group"><label>הודעה אישית (אופציונלי)</label>
         <textarea id="e-message" class="form-control" rows="3" maxlength="1000" placeholder="למשל: מצורפת גישה להודעות האימות" oninput="scheduleMailPreview(\${id})"></textarea></div>
+        <div id="e-history"></div>
         <label style="display:block; margin-bottom:8px; font-size:14px; font-weight:600;">תצוגה מקדימה</label>
         <div style="border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; background:#eef2f7;">
             <iframe id="e-preview" title="תצוגה מקדימה" style="width:100%; height:440px; border:0; display:block;"></iframe>
@@ -500,6 +620,7 @@ window.openTempEmailModal = function(id) {
     };
     document.getElementById('generic-modal').classList.add('show');
     loadMailPreview(id);
+    loadMailHistory(id);
     setTimeout(() => document.getElementById('e-to').focus(), 100);
 };
 

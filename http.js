@@ -144,3 +144,9 @@ export function ipAllowed(ip, rulesStr) {
         return (addr.n >> shift) === (rule.n >> shift);
     });
 }
+
+// מזהה אקראי של 32 תווים הקסדצימליים (לקישורי מעקב / אישור)
+export function randomToken() {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
