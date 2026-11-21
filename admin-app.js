@@ -437,6 +437,7 @@ window.openTempCodeModal = function(systemsJson) {
     scopeSystemId = null;
     sendersCache = [];
     document.getElementById('modal-title').textContent = 'הנפקת קוד זמני חדש';
+    document.getElementById('modal-save-btn').textContent = 'הנפק קוד';
     document.getElementById('modal-body').innerHTML = \`
         <div class="form-group"><label>בחר מערכת</label>
         <select id="t-system" class="form-control">\${systems.map(s => \`<option value="\${s.id}">\${s.description}</option>\`).join('')}</select></div>
@@ -554,6 +555,7 @@ let notifySystems = [];
 window.openNotifyModal = function() {
     if (!notifySystems.length) return showToast('אין מערכות מקושרות לחשבון', 'error');
     document.getElementById('modal-title').textContent = 'הוספת התראה במייל';
+    document.getElementById('modal-save-btn').textContent = 'שלח אישור';
     document.getElementById('modal-body').innerHTML = \`
         <div class="form-group"><label>מערכת</label>
         <select id="n-system" class="form-control">\${notifySystems.map(s => \`<option value="\${s.id}">\${escapeHtml(s.description)}</option>\`).join('')}</select></div>
@@ -592,6 +594,7 @@ window.openTempEmailModal = function(id) {
     const c = tempCodesCache[id];
     if (!c) return;
     document.getElementById('modal-title').textContent = 'שליחת הקוד ' + c.temp_code + ' במייל';
+    document.getElementById('modal-save-btn').textContent = 'שלח מייל';
     document.getElementById('modal-body').innerHTML = \`
         <div class="form-group"><label>כתובת מייל של הנמען</label>
         <input type="email" id="e-to" class="form-control" style="direction:ltr;" placeholder="name@example.com"></div>
@@ -653,6 +656,7 @@ window.openTempRenameModal = function(id) {
     const c = tempCodesCache[id];
     if (!c) return;
     document.getElementById('modal-title').textContent = 'שינוי הקוד ' + c.temp_code;
+    document.getElementById('modal-save-btn').textContent = 'החלף קוד';
     document.getElementById('modal-body').innerHTML = \`
         <p style="margin:0 0 16px; color:var(--text-muted); font-size:14px;">ההרשאות, התוקף והגבלות ה-IP נשארים כמו שהם. הקוד הישן והקישור הישן יפסיקו לעבוד.</p>
         <div class="form-group"><label>קוד חדש</label>
@@ -917,7 +921,42 @@ window.manageTempCode = async function(id, action) {
     showLoader(false); loadUserView('temp_codes');
 };
 
-function closeModal() { document.getElementById('generic-modal').classList.remove('show'); }
+// ---------- מובייל ----------
+window.toggleSidebar = function(open) {
+    document.getElementById('sidebar').classList.toggle('open', open);
+    document.getElementById('sidebar-backdrop').classList.toggle('show', open);
+};
+// בחירה בתפריט סוגרת את המגירה
+document.getElementById('menu-items').addEventListener('click', () => toggleSidebar(false));
+document.querySelector('.menu-bottom').addEventListener('click', () => toggleSidebar(false));
+
+// תוויות לתאים - בטלפון כל שורה בטבלה מוצגת ככרטיס "כותרת: ערך"
+function labelTables(root) {
+    root.querySelectorAll('table').forEach(table => {
+        const headRow = [...table.querySelectorAll('tr')].find(tr => tr.querySelector('th'));
+        if (!headRow) return;
+        const labels = [...headRow.children].map(th => th.textContent.trim());
+        table.querySelectorAll('tr').forEach(tr => {
+            if (tr === headRow) return;
+            [...tr.children].forEach((td, i) => {
+                if (td.tagName !== 'TD' || td.dataset.labeled) return;
+                td.dataset.labeled = '1';
+                if (td.colSpan > 1) { td.classList.add('empty-cell'); return; }
+                const label = labels[i] || '';
+                if (label === 'פעולות') td.classList.add('actions-cell');
+                else td.dataset.label = label;
+            });
+        });
+    });
+}
+new MutationObserver(() => labelTables(document.getElementById('view-container')))
+    .observe(document.getElementById('view-container'), { childList: true, subtree: true });
+
+function closeModal() {
+    document.getElementById('generic-modal').classList.remove('show');
+    // הטקסט של כפתור האישור חוזר לברירת המחדל (חלונות השליחה / ההנפקה משנים אותו)
+    document.getElementById('modal-save-btn').textContent = 'שמור';
+}
 
 window.loginAdmin = loginAdmin;
 window.loginUser = loginUser;

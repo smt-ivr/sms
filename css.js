@@ -18,7 +18,7 @@ export default `
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Heebo', system-ui, sans-serif; }
-body { background-color: var(--bg-main); color: var(--text-main); height: 100vh; overflow: hidden; direction: rtl; display: flex; flex-direction: column; }
+body { background-color: var(--bg-main); color: var(--text-main); height: 100vh; height: 100dvh; overflow: hidden; direction: rtl; display: flex; flex-direction: column; }
 
 /* Scrollbar חינני */
 ::-webkit-scrollbar { width: 6px; }
@@ -184,6 +184,40 @@ input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px
     
     .chat-header { padding-right: 10px; }
     .chat-title-info { margin-right: 5px; }
+
+    /* מסך מלא בטלפון, כולל אזורים בטוחים (חריץ / פס הבית באייפון) */
+    .screen { height: 100dvh; }
+    .sidebar-header, .chat-header { height: calc(60px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+    .sidebar-header { padding-left: 10px; padding-right: 14px; gap: 8px; }
+    .sidebar-header h2 { font-size: 18px; flex-shrink: 0; }
+    .sidebar-actions { gap: 2px; min-width: 0; }
+    .mfa-badge { padding: 4px 10px; min-width: 0; }
+    .mfa-badge > div { min-width: 0; }
+    .mfa-badge span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-title-info { min-width: 0; flex: 1; }
+    .chat-title-info h2 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .contact-item { padding: 13px 16px; }
+    .message { max-width: 85%; font-size: 15px; }
+    #chat-input-area { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); min-height: 0; }
+    #contacts-list { padding-bottom: env(safe-area-inset-bottom); }
+
+    /* 16px מונע הגדלה אוטומטית של המסך באייפון בזמן הקלדה */
+    input, textarea, select, #new-message-input, #modal-input { font-size: 16px !important; }
+
+    /* מסך הכניסה נגלל כשהמקלדת פתוחה */
+    #login-screen { align-items: flex-start; overflow-y: auto; padding: 16px 0 calc(16px + env(safe-area-inset-bottom)); }
+    .login-box { width: calc(100% - 24px); padding: 56px 20px 26px; max-height: none; overflow: visible; margin: auto; border-radius: 20px; }
+    .admin-link { top: 14px; left: 14px; }
+
+    .modal-overlay { align-items: flex-end; }
+    .modal-box { width: 100%; max-width: 100%; border-radius: 20px 20px 0 0; padding: 22px 18px calc(18px + env(safe-area-inset-bottom)); }
+    .modal-actions button { flex: 1; padding: 12px; }
+}
+
+@media (max-width: 360px) {
+    .mfa-badge > div span:last-child { display: none; }
+    .sidebar-header h2 { font-size: 16px; }
 }
 
 /* Modals & Loaders Overlay */

@@ -2,7 +2,8 @@ export default `<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
     <title>S.M.T - פורטל ניהול מערכות</title>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800&display=swap" rel="stylesheet">
@@ -86,6 +87,7 @@ export default `<!DOCTYPE html>
     </div>
 
     <div id="app-layout">
+        <div id="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
         <div id="sidebar">
             <div class="brand">
                 <div class="brand-icon"><span class="material-symbols-rounded">cloud_done</span></div>
@@ -102,6 +104,7 @@ export default `<!DOCTYPE html>
         
         <div id="main-content">
             <div class="topbar">
+                <button class="btn-icon menu-toggle" onclick="toggleSidebar(true)" title="תפריט" aria-label="פתיחת תפריט"><span class="material-symbols-rounded">menu</span></button>
                 <h2 id="topbar-title">לוח בקרה</h2>
                 <div class="topbar-actions">
                     <button class="btn-icon" onclick="refreshCurrentData()" title="רענן נתונים"><span class="material-symbols-rounded">refresh</span></button>
@@ -120,7 +123,7 @@ export default `<!DOCTYPE html>
             <div id="modal-body" class="modal-body"></div>
             <div class="modal-actions">
                 <button class="btn-outline" onclick="closeModal()">ביטול</button>
-                <button class="btn-primary" id="modal-save-btn">שמור שינויים</button>
+                <button class="btn-primary" id="modal-save-btn">שמור</button>
             </div>
         </div>
     </div>

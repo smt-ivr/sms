@@ -111,7 +111,9 @@ body { background: var(--bg-main); color: var(--text-main); display: flex; heigh
 table { width: 100%; border-collapse: collapse; }
 .table-scroll { overflow-x: auto; }
 .compact-table th, .compact-table td { padding: 14px 16px; }
-.compact-table td:last-child { white-space: nowrap; }
+.compact-table th, .compact-table td { padding: 12px 10px; }
+.compact-table td:last-child { min-width: 190px; }
+.compact-table td:last-child button { margin: 2px; padding: 5px 9px !important; font-size: 13px; border-width: 1.5px; }
 th, td { padding: 18px 30px; text-align: right; border-bottom: 1px solid var(--border); }
 th { color: var(--text-muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; background: #f8fafc; }
 tr:last-child td { border-bottom: none; }
@@ -141,4 +143,86 @@ td { font-weight: 500; font-size: 15px; }
 .hidden { display: none !important; }
 .fade-in { animation: fadeIn 0.4s ease forwards; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ==========================================
+   מובייל וטאבלט
+   ========================================== */
+.menu-toggle { display: none; flex-shrink: 0; }
+#sidebar-backdrop { display: none; }
+.content-area table td.empty-cell { text-align: center; }
+
+@media (max-width: 900px) {
+    .topbar { padding: 0 20px; }
+    .content-area { padding: 24px; }
+}
+
+@media (max-width: 768px) {
+    html, body { height: 100%; }
+    #app-layout { height: 100dvh; }
+
+    /* תפריט צד נפתח כמגירה */
+    .menu-toggle { display: flex; }
+    #sidebar { position: fixed; top: 0; bottom: 0; right: 0; width: min(300px, 85vw); z-index: 5000;
+        transform: translateX(105%); transition: transform .28s ease; padding-bottom: env(safe-area-inset-bottom); }
+    #sidebar.open { transform: translateX(0); }
+    #sidebar-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .5); z-index: 4999; opacity: 0; pointer-events: none; transition: opacity .28s; display: block; }
+    #sidebar-backdrop.show { opacity: 1; pointer-events: auto; }
+
+    .topbar { height: 60px; padding: 0 12px; gap: 10px; justify-content: flex-start; padding-top: env(safe-area-inset-top); box-sizing: content-box; }
+    .topbar h2 { font-size: 17px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; gap: 8px; }
+    .topbar h2 .material-symbols-rounded { font-size: 22px !important; }
+    .content-area { padding: 14px 12px calc(24px + env(safe-area-inset-bottom)); }
+
+    /* כרטיסים */
+    .card { border-radius: 14px; margin-bottom: 18px; }
+    .card-header { padding: 14px 16px; flex-wrap: wrap; gap: 10px; }
+    .card-header h3 { font-size: 16px; }
+    .card-header .btn-primary { width: 100%; justify-content: center; }
+    .card > div[style*="padding"] { padding-left: 16px !important; padding-right: 16px !important; }
+    .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .stat-card { padding: 14px; gap: 10px; border-radius: 12px; }
+    .stat-icon { width: 38px !important; height: 38px !important; }
+    .stat-info div:last-child { font-size: 20px !important; }
+
+    /* טבלאות -> כרטיס לכל שורה */
+    .table-scroll { overflow: visible; }
+    .content-area table, .content-area tbody, .content-area tr, .content-area td { display: block; width: 100%; box-sizing: border-box; }
+    .content-area tr:has(> th) { display: none; }
+    .content-area tr { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .content-area tr:last-child { border-bottom: 0; }
+    .content-area td { padding: 5px 0 !important; border: 0 !important; display: flex; align-items: flex-start; gap: 12px; font-size: 14px;
+        text-align: right !important; white-space: normal !important; word-break: break-word; }
+    .content-area td[data-label]::before { content: attr(data-label); flex: 0 0 96px; color: var(--text-muted); font-size: 12px; font-weight: 600; padding-top: 2px; text-align: right; font-family: 'Heebo', system-ui, sans-serif; direction: rtl; letter-spacing: 0; }
+    .content-area td[data-label=""]::before { display: none; }
+    .content-area td.actions-cell { flex-wrap: wrap; gap: 6px; padding-top: 10px !important; }
+    .content-area td.actions-cell::before { display: none; }
+    .content-area td.actions-cell button { flex: 1 1 auto; margin: 0 !important; min-height: 38px; }
+    .content-area td.empty-cell { justify-content: center; padding: 26px 0 !important; }
+    .content-area td.empty-cell::before { display: none; }
+
+    /* חלונות: גיליון מלמטה */
+    .modal-overlay { align-items: flex-end; }
+    .modal { max-width: 100%; margin: 0; border-radius: 20px 20px 0 0; max-height: calc(100dvh - 24px); }
+    .modal-header { padding: 16px 18px; }
+    .modal-header h3 { font-size: 17px; }
+    .modal-body { padding: 18px; }
+    .modal-actions { padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); }
+    .modal-actions button { flex: 1; justify-content: center; white-space: nowrap; padding-left: 10px; padding-right: 10px; }
+
+    /* טפסים: 16px מונע הגדלה אוטומטית באייפון */
+    .form-control, .login-input, select, textarea, input { font-size: 16px !important; }
+
+    /* כניסה */
+    #login-screen { padding: 16px; align-items: flex-start; overflow-y: auto; }
+    .login-box { padding: 26px 20px; border-radius: 20px; margin: auto 0; }
+    .login-header h2 { font-size: 21px; }
+
+    .toast { width: calc(100% - 32px); box-sizing: border-box; justify-content: center; padding: 12px 16px; font-size: 14px; }
+    .toast.show { bottom: calc(20px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 380px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .content-area td[data-label]::before { flex-basis: 80px; }
+}
 `;
